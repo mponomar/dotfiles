@@ -1,0 +1,21 @@
+[alias]
+	st = status
+	stat = status
+	co = checkout
+	com = commit
+    rev = checkout --
+	l = log --format='%C(green)%h%Creset %ae %Cred%d%Creset- %s (%C(yellow)%ar%Creset) ' --graph
+    br = branch
+[color]
+	ui = auto
+[user]
+	name = Michael Ponomarenko
+	email = mponomarenko@bloomberg.net
+[instaweb]
+	browser = open
+[diff]
+	tool = meld
+[difftool]
+    prompt = no
+[push]
+	default = matching
