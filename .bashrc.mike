@@ -1,0 +1,49 @@
+export EDITOR=vi
+set -o vi
+bind -m vi-insert '\C-l':clear-screen
+bind -m vi-command 'Rubout':backward-char
+
+PATH="$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/bb/bin"
+
+function _complete_tags {
+    unset COMPREPLY
+    [[ -r $tags ]] && return 0
+    i=0
+    for tag in $(grep "^$2" tags | cut -d'	' -f1); do
+        COMPREPLY[$i]="$tag"
+        i=$(($i+1))
+    done
+}
+
+complete -F _complete_tags vit
+
+alias vit='vi -t'
+alias cx='chmod +x'
+alias psef='ps -ef | grep'
+alias inst='sudo apt-get install'
+alias srch='apt-cache search'
+alias open='xdg-open'
+alias vb='VBoxManage'
+
+function hyper {
+    if [[ -z "$1" ]]; then
+        links /usr/share/doc/hyperspec/Front/X_AllSym.htm
+        return
+    elif [[ "$1" = "-s" ]]; then
+        arg=$2
+        grep -w "$arg" /usr/share/doc/hyperspec/Front/X_AllSym.htm  | grep DEFINITION | sed 's/.*<B>//g; s/<\/B>.*//'
+        return
+    else
+        arg=$1
+        nmatches=$(grep DEFINITION /usr/share/doc/hyperspec/Front/X_AllSym.htm  | sed 's/.*<B>//g; s/<\/B>.*//'| grep "^$arg\$" | wc -l)
+        if [[ $nmatches -ne 1 ]]; then
+            grep -w "$arg" /usr/share/doc/hyperspec/Front/X_AllSym.htm  | grep DEFINITION | sed 's/.*<B>//g; s/<\/B>.*//'
+        else
+            url=$(grep "<B>$arg</B>" /usr/share/doc/hyperspec/Front/X_AllSym.htm | grep DEFINITION | sed 's/.*HREF="//; s/".*//')
+            links "/usr/share/doc/hyperspec/Front/${url}"
+        fi
+    fi
+}
+alias hs='hyper -l | grep'
+export MANPATH=$(manpath 2>/dev/null):"$HOME/share/man"
+alias errors='grep --color=never 'define.*E' /usr/include/asm-generic/errno.h'
