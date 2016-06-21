@@ -19,3 +19,7 @@
     prompt = no
 [push]
 	default = matching
+[credential]
+    helper = cache --timeout 86400
+[pull]
+    rebase = true
