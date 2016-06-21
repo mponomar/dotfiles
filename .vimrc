@@ -32,6 +32,8 @@ autocmd BufNewFile,BufRead *.fth set syntax=forth
 autocmd BufRead,BufNewFile *.py syntax on
 autocmd BufRead,BufNewFile *.py set ai
 autocmd BufRead *.py set smartindent cinwords=if,elif,else,for,while,with,try,except,finally,def,class
+au! BufRead *.clj setlocal iskeyword+=-/.
+au! BufRead *.clj setlocal iskeyword+=*
 au FileType python setl autoindent tabstop=4 expandtab shiftwidth=4 softtabstop=4
 
 au FileType make setlocal expandtab
@@ -59,7 +61,7 @@ hi cComment     ctermfg=5 guifg=DarkCyan
 
 
 set shortmess+=I
-set path=.,/usr/local/include,/usr/include,/usr/local/include/osxfuse/fuse,/home/mike/comdb2/src
+set path=.,/usr/local/include,/usr/include,/usr/include/x86_64-linux-gnu
 
 let s:hltoggled = 0
 function! Hltoggle()
@@ -120,5 +122,7 @@ au BufWrite *.org :PreWriteTags
 au BufWritePost *.org :PostWriteTags
 
 set cinoptions=l1
-:nnoremap K K<CR>
-:vnoremap K K<CR>
+":nnoremap K K<CR>
+":vnoremap K K<CR>
+
+execute pathogen#infect()
