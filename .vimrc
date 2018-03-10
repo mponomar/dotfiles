@@ -124,5 +124,3 @@ au BufWritePost *.org :PostWriteTags
 set cinoptions=l1
 ":nnoremap K K<CR>
 ":vnoremap K K<CR>
-
-execute pathogen#infect()
