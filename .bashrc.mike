@@ -1,9 +1,13 @@
-export EDITOR=vi
+export EDITOR=vim
+export SYSTEMD_PAGER=
+export PAGER=less
 set -o vi
 bind -m vi-insert '\C-l':clear-screen
 bind -m vi-command 'Rubout':backward-char
 
-PATH="$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/bb/bin"
+PATH="$HOME/bin:/opt/bb/bin:$PATH"
+export PS1='xps:$PWD $ '
+unset PROMPT_COMMAND
 
 function _complete_tags {
     unset COMPREPLY
@@ -25,25 +29,21 @@ alias srch='apt-cache search'
 alias open='xdg-open'
 alias vb='VBoxManage'
 
-function hyper {
-    if [[ -z "$1" ]]; then
-        links /usr/share/doc/hyperspec/Front/X_AllSym.htm
-        return
-    elif [[ "$1" = "-s" ]]; then
-        arg=$2
-        grep -w "$arg" /usr/share/doc/hyperspec/Front/X_AllSym.htm  | grep DEFINITION | sed 's/.*<B>//g; s/<\/B>.*//'
-        return
-    else
-        arg=$1
-        nmatches=$(grep DEFINITION /usr/share/doc/hyperspec/Front/X_AllSym.htm  | sed 's/.*<B>//g; s/<\/B>.*//'| grep "^$arg\$" | wc -l)
-        if [[ $nmatches -ne 1 ]]; then
-            grep -w "$arg" /usr/share/doc/hyperspec/Front/X_AllSym.htm  | grep DEFINITION | sed 's/.*<B>//g; s/<\/B>.*//'
-        else
-            url=$(grep "<B>$arg</B>" /usr/share/doc/hyperspec/Front/X_AllSym.htm | grep DEFINITION | sed 's/.*HREF="//; s/".*//')
-            links "/usr/share/doc/hyperspec/Front/${url}"
-        fi
-    fi
-}
-alias hs='hyper -l | grep'
+alias bn='sudo systemctl restart NetworkManager'
 export MANPATH=$(manpath 2>/dev/null):"$HOME/share/man"
-alias errors='grep --color=never 'define.*E' /usr/include/asm-generic/errno.h'
+alias errors='grep --color=never 'define.*E' /usr/include/asm-generic/errno.h /usr/include/asm-generic/errno-base.h | sort -k3n,3n'
+alias m='time make -j4 >/dev/null && ctags -R'
+
+export CHROOT=${HOME}/chroot
+MOSH_ESCAPE_KEY=""
+
+function nt {
+    [[ ! -d ~/temp ]] && mkdir ~/temp
+    [[ ! -f ~/temp/.next ]] && echo 1 > ~/temp/.next
+    next=$(cat ~/temp/.next)
+    [[ -z "$next" ]] && return 1
+    rm -fr ~/temp/${next}
+    mkdir -p ~/temp/${next} 
+    echo $(($next % 100 + 1)) > ~/temp/.next
+    cd ~/temp/${next} 
+}
