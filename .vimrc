@@ -124,3 +124,11 @@ au BufWritePost *.org :PostWriteTags
 set cinoptions=l1
 ":nnoremap K K<CR>
 ":vnoremap K K<CR>
+filetype off
+
+set rtp+=~/.vim/bundle/Vundle.vim
+call vundle#begin()
+Plugin 'VundleVim/Vundle.vim'
+Plugin 'Valloric/YouCompleteMe'
+call vundle#end()
+filetype plugin indent on
