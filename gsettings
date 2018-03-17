@@ -24,6 +24,7 @@ move-to-workspace-4=['<Shift><Alt>dollar']
 switch-to-workspace-4=['<Alt>4']
 [org/gnome/settings-daemon/plugins/media-keys]
 terminal='<Alt>Return'
+www='<Alt>b'
 
 
 [org/gnome/terminal/legacy]
