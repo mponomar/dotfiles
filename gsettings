@@ -37,13 +37,18 @@ list=['b1dcc9dd-5262-4d8d-a863-c897e6d979b9', '6df7de08-3a26-4fa2-82aa-4d6089686
 default='6df7de08-3a26-4fa2-82aa-4d6089686133'
 
 [org/gnome/terminal/legacy/profiles:/:6df7de08-3a26-4fa2-82aa-4d6089686133]
-background-color='rgb(255,255,255)'
-login-shell=true
-use-theme-colors=false
+foreground-color='rgb(238,238,238)'
 visible-name='mike'
-foreground-color='rgb(0,0,0)'
-use-system-font=true
+login-shell=true
+palette=['rgb(0,0,0)', 'rgb(204,0,0)', 'rgb(78,154,6)', 'rgb(196,160,0)', 'rgb(52,101,164)', 'rgb(117,80,123)', 'rgb(6,152,154)', 'rgb(211,215,207)', 'rgb(85,87,83)', 'rgb(239,41,41)', 'rgb(138,226,52)', 'rgb(252,233,79)', 'rgb(114,159,207)', 'rgb(173,127,168)', 'rgb(52,226,226)', 'rgb(238,238,236)']
+use-system-font=false
+highlight-colors-set=true
+use-theme-colors=false
+font='Bitstream Vera Sans Mono 12'
+highlight-background-color='rgb(252,233,79)'
+background-color='rgb(46,52,54)'
 audible-bell=false
+highlight-foreground-color='rgb(37,35,35)'
 
 [org/gnome/mutter]
 dynamic-workspaces=false
