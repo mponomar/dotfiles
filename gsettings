@@ -31,5 +31,18 @@ menu-accelerator-enabled=false
 schema-version=uint32 3
 default-show-menubar=false
 
+[org/gnome/terminal/legacy/profiles:]
+list=['b1dcc9dd-5262-4d8d-a863-c897e6d979b9', '6df7de08-3a26-4fa2-82aa-4d6089686133']
+default='6df7de08-3a26-4fa2-82aa-4d6089686133'
+
+[org/gnome/terminal/legacy/profiles:/:6df7de08-3a26-4fa2-82aa-4d6089686133]
+background-color='rgb(255,255,255)'
+login-shell=true
+use-theme-colors=false
+visible-name='mike'
+foreground-color='rgb(0,0,0)'
+use-system-font=true
+audible-bell=false
+
 [org/gnome/mutter]
 dynamic-workspaces=false
