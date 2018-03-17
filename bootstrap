@@ -1,0 +1,22 @@
+#!/bin/bash
+
+sudo apt remove -y firefox
+sudo apt remove -y libreoffice-*
+sudo apt remove -y ubuntu-web-launchers
+sudo apt install -y chromium-browser git vim
+git clone https://github.com/mponomar/dotfiles
+cd dotfiles
+cp .ackrc .bashrc.mike .ctags .gitconfig .tmux.conf .vimrc $HOME/
+echo "[[ -f $HOME/.bashrc.mike ]] && . $HOME/.bashrc.mike" >> $HOME/.bashrc
+cd $HOME
+git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
+vim -c 'VundleInstall' -c 'qa!'
+sudo apt install -y build-essential meld python3-dev golang clang clang-format cmake make nodejs npm openjdk-9-jdk
+cd $HOME/.vim/bundle/YouCompleteMe/
+python3 ./install.py --clang-completer --go-completer --js-completer --java-completer
+cd $HOME/dotfiles
+dconf load / < gsettings
+cd $HOME
+mkdir comdb2
+git clone https://github.com/mponomar/comdb2 comdb2/src
+sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadline-dev libsqlite3-dev libssl-dev libunwind-dev libz1 libz-dev make gawk protobuf-c-compiler uuid-dev liblz4-tool liblz4-dev libprotobuf-c1 libsqlite3-0 libuuid1 libz1 tzdata ncurses-dev tcl bc
