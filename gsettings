@@ -22,6 +22,9 @@ move-to-workspace-2=['<Shift><Alt>at']
 move-to-workspace-3=['<Shift><Alt>numbersign']
 move-to-workspace-4=['<Shift><Alt>dollar']
 switch-to-workspace-4=['<Alt>4']
+[org/gnome/settings-daemon/plugins/media-keys]
+terminal='<Alt>Return'
+
 
 [org/gnome/terminal/legacy]
 menu-accelerator-enabled=false
