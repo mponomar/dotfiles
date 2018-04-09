@@ -59,3 +59,6 @@ color-shading-type='solid'
 primary-color='#000000'
 picture-options='zoom'
 secondary-color='#000000'
+
+[org/gnome/desktop/input-sources]
+xkb-options=['ctrl:nocaps']
