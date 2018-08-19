@@ -11,7 +11,7 @@ cd dotfiles
 cp .ackrc .bashrc.mike .ctags .gitconfig .tmux.conf .vimrc $HOME/
 echo "[[ -f $HOME/.bashrc.mike ]] && . $HOME/.bashrc.mike" >> $HOME/.bashrc
 cd $HOME
-sudo apt install -y build-essential meld python3-dev golang clang clang-format cmake make nodejs npm openjdk-9-jdk vim tmux vim
+sudo apt install -y build-essential meld python3-dev golang clang clang-format cmake make nodejs npm openjdk-9-jdk vim tmux vim valgrind
 git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/
