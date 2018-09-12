@@ -85,12 +85,48 @@ function! FoldToggle()
     endif
 endfunction
 
-map ;c i#include <stdlib.h>#include <stdio.h>#include <errno.h>#include <string.h>#include <unistd.h>#include <stddef.h>int main(int argc, char *argv[]) {}<esc>
-map ;C i#include <iostream>int main() {}<esc>
-map ;j iimport java.util.*;public class =substitute(substitute(bufname("%"),".*/", "", ""), "\.java", "", "")<cr> {public static void main(String argv[]) {}public =substitute(substitute(bufname("%"),".*/", "", ""), "\.java", "", "")<cr>() {}}
+map ;c i#include <stdlib.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <stddef.h>
+
+int main(int argc, char *argv[]) {
+}<esc>
+map ;C i#include <iostream>
+
+int main() {
+}<esc>
+map ;j iimport java.util.*;
+
+public class =substitute(substitute(bufname("%"),".*/", "", ""), "\.java", "", "")<cr> {
+public static void main(String argv[]) {
+}
+
+public =substitute(substitute(bufname("%"),".*/", "", ""), "\.java", "", "")<cr>() {
+}
+}
 map ;h i#ifndef INCLUDED_=toupper(substitute(bufname("%"), '\.h', "", ""))<cr>_H<cr>#define INCLUDED_=toupper(substitute(bufname("%"), '\.h', "", ""))<cr>_H<cr><cr><cr><cr>#endif<esc>kk
-map ;e k0f=wvf(y$oif (rc) {printf("%s:%d: <esc>pi rc %d\n", __FILE__, __LINE__, rc);goto done;}<esc> xo
-map ;m <esc>:set nocindent<esc>:set syntax=makeiOBJS=BINARY=LIBS=CFLAGS=-Wall -g$(BINARY): $(OBJS)gcc -o $(BINARY) $(OBJS) $(LDFLAGS) $(LIBS)%.o: %.c	gcc -c $(CFLAGS) $< -o $@clean:  	rm -f $(BINARY) $(OBJS)<esc>0dwi	<esc>
+map ;e k0f=wvf(y$oif (rc) {
+printf("%s:%d: <esc>pi rc %d\n", __FILE__, __LINE__, rc);
+goto done;
+}<esc> xo
+map ;m <esc>:set nocindent
+<esc>:set syntax=make
+iOBJS=
+BINARY=
+
+LIBS=
+CFLAGS=-Wall -g
+$(BINARY): $(OBJS)
+gcc -o $(BINARY) $(OBJS) $(LDFLAGS) $(LIBS)
+
+%.o: %.c
+	gcc -c $(CFLAGS) $< -o $@
+
+clean:  
+	rm -f $(BINARY) $(OBJS)<esc>0dwi	<esc>
 
 
 map > :cn<cr>
@@ -102,8 +138,10 @@ map M :make<cr>
 map S :call Hltoggle()<cr>
 
 "from web http://www.faqs.org/docs/Linux-HOWTO/C-editing-with-VIM-HOWTO.html
-map [[ ?{w99[{
-map ][ /}b99]}
+map [[ ?{
+w99[{
+map ][ /}
+b99]}
 map ]] j0[[%/{
 map [] k$][%?}
 
@@ -120,6 +158,9 @@ au BufRead,BufNewFile *.org            call org#SetOrgFileType()
 au BufRead *.org :PreLoadTags
 au BufWrite *.org :PreWriteTags
 au BufWritePost *.org :PostWriteTags
+
+map ,e :copen 20<cr>
+map ,c :ccl<cr>
 
 set cinoptions=l1
 ":nnoremap K K<CR>
