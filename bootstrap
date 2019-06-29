@@ -9,7 +9,7 @@ sudo apt install -y chromium-browser git
 cp .ackrc .bashrc.mike .ctags .gitconfig .tmux.conf .vimrc $HOME/
 echo "[[ -f $HOME/.bashrc.mike ]] && . $HOME/.bashrc.mike" >> $HOME/.bashrc
 cd $HOME
-sudo apt install -y build-essential meld python3-dev golang clang clang-format cmake make nodejs npm openjdk-9-jdk vim tmux vim valgrind golang-golang-x-tools fonts-hack fonts-hack-ttf tmux fonts-hack-ttf
+sudo apt install -y build-essential meld python3-dev golang clang clang-format cmake make nodejs npm openjdk-9-jdk vim tmux vim valgrind golang-golang-x-tools fonts-hack fonts-hack-ttf tmux golang docker docker-compose cmake-curses-gui ninja-build bear
 git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/

@@ -56,7 +56,7 @@ highlight-foreground-color='rgb(37,35,35)'
 dynamic-workspaces=false
 
 [org/gnome/desktop/background]
-picture-uri='file:///usr/share/backgrounds/Lighthouse_at_sunrise_by_Frenchie_Smalls.jpg'
+picture-uri='file:///usr/share/backgrounds/ubuntu-default-greyscale-wallpaper.png'
 color-shading-type='solid'
 primary-color='#000000'
 picture-options='zoom'
