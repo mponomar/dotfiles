@@ -6,18 +6,15 @@ sudo apt remove -y firefox
 sudo apt remove -y libreoffice-*
 sudo apt remove -y ubuntu-web-launchers
 sudo apt install -y chromium-browser git
-git clone https://github.com/mponomar/dotfiles
-cd dotfiles
 cp .ackrc .bashrc.mike .ctags .gitconfig .tmux.conf .vimrc $HOME/
 echo "[[ -f $HOME/.bashrc.mike ]] && . $HOME/.bashrc.mike" >> $HOME/.bashrc
 cd $HOME
-sudo apt install -y build-essential meld python3-dev golang clang clang-format cmake make nodejs npm openjdk-9-jdk vim tmux vim valgrind golang-golang-x-tools fonts-hack
+sudo apt install -y build-essential meld python3-dev golang clang clang-format cmake make nodejs npm openjdk-9-jdk vim tmux vim valgrind golang-golang-x-tools fonts-hack fonts-hack-ttf tmux fonts-hack-ttf
 git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/
 python3 ./install.py --clang-completer --go-completer --js-completer --java-completer
 cd $HOME/dotfiles
-sudo apt install -y ttf-bitstream-vera
 dconf load / < gsettings
 cd $HOME
 mkdir comdb2
