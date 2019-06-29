@@ -52,6 +52,9 @@ vnoremap <Up> gk
 inoremap <Down> <C-o>gj
 inoremap <Up> <C-o>gk 
 
+
+map ;h i#ifndef INCLUDED_=toupper(substitute(bufname("%"), '\.c', "", ""))<cr>_H<cr>#define INCLUDED_=toupper(substitute(bufname("%"), '\.c', "", ""))<cr>_H<cr><cr><cr><cr>#endif<esc>kk
+
 hi StatusLine   cterm=bold ctermfg=8  ctermbg=6
 hi StatusLineNC term=reverse cterm=reverse
 "hi cComment     term=bold cterm=bold ctermfg=4
@@ -118,13 +121,11 @@ set cinoptions=l1
 ":vnoremap K K<CR>
 filetype off
 set encoding=utf-8
-
 set rtp+=~/.vim/bundle/Vundle.vim
 :imap <C-J> <Plug>snipMateNextOrTrigger
 :smap <C-J> <Plug>snipMateNextOrTrigger
 :imap <C-K> <Plug>snipMateBack
 :smap <C-K> <Plug>snipMateBack
->>>>>>> Fix .vimrc, add more packages
 
 set rtp+=~/.vim/bundle/Vundle.vim
 call vundle#begin()

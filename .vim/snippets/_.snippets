@@ -8,3 +8,21 @@ snippet cm
 		${1}
 		return 0;
 	}
+
+snippet for
+	for (${1};${2};${3}) {
+		${4}
+	}
+
+snippet make
+	OBJS=${1}
+	BINARY=${2}
+	LIBS=
+	CFLAGS=-Wall -g
+	$(BINARY): $(OBJS)
+		gcc -o $(BINARY) $(OBJS) $(LDFLAGS) $(LIBS)
+	%.o: %.c
+		gcc -c $(CFLAGS) $< -o $@
+	clean:
+		rm -f $(BINARY) $(OBJS)
+

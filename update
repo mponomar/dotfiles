@@ -1,0 +1,16 @@
+#!/bin/bash
+
+updatefile() {
+    diff -q ~/$1 $1
+    [[ $? -ne 0 ]] && meld ~/$1 $1
+}
+
+for file in $(cat precious); do
+    if [[ -d $file ]]; then
+        for f in $(find $file -type f); do
+            updatefile $f
+        done
+    else
+        updatefile $file
+    fi
+done
