@@ -14,3 +14,4 @@
 --regex-clojure=/\([ \t]*ns[ \t]+([-[:alnum:]*+!_:\/.?]+)/\1/n,namespace/
 --exclude=*.html
 --exclude=*.js
+--exclude=.git

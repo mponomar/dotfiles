@@ -5,7 +5,7 @@ set -o vi
 bind -m vi-insert '\C-l':clear-screen
 bind -m vi-command 'Rubout':backward-char
 
-PATH="$HOME/bin:/opt/bb/bin:$PATH"
+PATH="$HOME/bin:/opt/bb/bin:$HOME/go/bin:$PATH"
 export PS1='xps:$PWD $ '
 unset PROMPT_COMMAND
 
@@ -47,3 +47,7 @@ function nt {
     echo $(($next % 100 + 1)) > ~/temp/.next
     cd ~/temp/${next} 
 }
+function lt {
+    cd ~/temp/$(ls -t ~/temp/ | head -n 1)
+}
+

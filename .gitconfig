@@ -5,7 +5,9 @@
 	com = commit
     rev = checkout --
 	l = log --format='%C(green)%h%Creset %ae %Cred%d%Creset- %s (%C(yellow)%ar%Creset) ' --graph
+    sync = !git fetch --all --tags && git co master && git pull && git merge --ff-only upstream/master && git push
     br = branch
+    wt = worktree
 [color]
 	ui = auto
 [user]
@@ -17,8 +19,6 @@
 	tool = meld
 [difftool]
     prompt = no
-[push]
-	default = matching
 [credential]
     helper = cache --timeout 86400
 [pull]
