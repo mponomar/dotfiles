@@ -94,10 +94,7 @@ map M :make<cr>
 map S :call Hltoggle()<cr>
 
 "from web http://www.faqs.org/docs/Linux-HOWTO/C-editing-with-VIM-HOWTO.html
-map [[ ?{w99[{
-map ][ /}b99]}
-map ]] j0[[%/{
-map [] k$][%?}
+map [[ 99[{b<cr>
 
 set grepprg=ack-grep\ --nogroup
 map ,f :grep\ <cword><cr>
@@ -123,8 +120,21 @@ filetype off
 set encoding=utf-8
 
 set rtp+=~/.vim/bundle/Vundle.vim
+:imap <C-J> <Plug>snipMateNextOrTrigger
+:smap <C-J> <Plug>snipMateNextOrTrigger
+:imap <C-K> <Plug>snipMateBack
+:smap <C-K> <Plug>snipMateBack
+>>>>>>> Fix .vimrc, add more packages
+
+set rtp+=~/.vim/bundle/Vundle.vim
 call vundle#begin()
 Plugin 'VundleVim/Vundle.vim'
+
 Plugin 'Valloric/YouCompleteMe'
+Plugin 'MarcWeber/vim-addon-mw-utils'
+Plugin 'tomtom/tlib_vim'
+Plugin 'garbas/vim-snipmate'
+Plugin 'godlygeek/tabular'
+
 call vundle#end()
 filetype plugin indent on
