@@ -62,7 +62,6 @@ hi StatusLineNC term=reverse cterm=reverse
 hi Comment      ctermfg=5 guifg=DarkCyan
 hi cComment     ctermfg=5 guifg=DarkCyan
 
-
 set shortmess+=I
 set path=.,/usr/local/include,/usr/include,/usr/include/x86_64-linux-gnu,/opt/bb/include
 
@@ -129,3 +128,6 @@ Plugin 'godlygeek/tabular'
 
 call vundle#end()
 filetype plugin indent on
+
+hi YcmErrorSection ctermfg=0 ctermbg=5
+hi YcmWarningSection ctermfg=0 ctermbg=5
