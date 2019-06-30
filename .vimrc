@@ -87,6 +87,16 @@ function! FoldToggle()
     endif
 endfunction
 
+map > :cn<cr>
+map < :cp<cr>
+map B  :buffers<cr>
+map T  :tags<cr>
+map H 
+map M :make<cr>
+map S :call Hltoggle()<cr>
+
+"from web http://www.faqs.org/docs/Linux-HOWTO/C-editing-with-VIM-HOWTO.html
+map [[ 99[{b<cr>
 
 set grepprg=ack-grep\ --nogroup
 map ,f :grep\ <cword><cr>
