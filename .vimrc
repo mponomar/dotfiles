@@ -98,7 +98,7 @@ map S :call Hltoggle()<cr>
 "from web http://www.faqs.org/docs/Linux-HOWTO/C-editing-with-VIM-HOWTO.html
 map [[ 99[{b<cr>
 
-set grepprg=ack-grep\ --nogroup
+set grepprg=git\ grep\ -n
 map ,f :grep\ <cword><cr>
 
 "set foldmethod=syntax
