@@ -27,6 +27,7 @@ git remote add dorin https://github.com/dorinhogea/comdb2
 git remote add lingzhi https://github.com/ldennis/comdb2
 git remote add mohit https://github.com/mohitkhullar/comdb2
 git remote add joe https://github.com/mistachkin/comdb2
+git remote add aakash https://github.com/aakash10292/comdb2
 git remote add james https://github.com/jmleddy/comdb2
 git remote add tim https://github.com/timmui/comdb2
 sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadline-dev libsqlite3-dev libssl-dev libunwind-dev libz1 libz-dev make gawk protobuf-c-compiler uuid-dev liblz4-tool liblz4-dev libprotobuf-c1 libsqlite3-0 libuuid1 libz1 tzdata ncurses-dev tcl bc
