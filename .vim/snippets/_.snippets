@@ -29,3 +29,13 @@ snippet make
 	clean:
 		rm -f $(BINARY) $(OBJS)
 
+snippet sc
+	tag ondisk {
+		int a
+		${1}
+	}
+
+	keys {
+	    dup "a" = a
+		${2}
+	}

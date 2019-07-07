@@ -51,3 +51,4 @@ function lt {
     cd ~/temp/$(ls -t ~/temp/ | head -n 1)
 }
 
+export db=$HOME/comdb2/src/build/db/comdb2
