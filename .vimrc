@@ -52,6 +52,12 @@ vnoremap <Up> gk
 inoremap <Down> <C-o>gj
 inoremap <Up> <C-o>gk 
 
+map > :cn<cr>
+map < :cp<cr>
+map B  :buffers<cr>
+map T  :tags<cr>
+map M :make<cr>
+map S :call Hltoggle()<cr>
 
 map ;h i#ifndef INCLUDED_=toupper(substitute(bufname("%"), '\.c', "", ""))<cr>_H<cr>#define INCLUDED_=toupper(substitute(bufname("%"), '\.c', "", ""))<cr>_H<cr><cr><cr><cr>#endif<esc>kk
 
