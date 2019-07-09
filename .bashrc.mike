@@ -6,7 +6,8 @@ bind -m vi-insert '\C-l':clear-screen
 bind -m vi-command 'Rubout':backward-char
 
 PATH="$HOME/bin:/opt/bb/bin:$HOME/go/bin:$PATH"
-export PS1='xps:$PWD $ '
+HOST=$(hostname)
+export PS1='${HOST}:$PWD $ '
 unset PROMPT_COMMAND
 
 function _complete_tags {
