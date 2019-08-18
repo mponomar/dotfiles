@@ -1,0 +1,6 @@
+set ideajoin
+set hlsearch
+set incsearch
+map S <esc>:nohlsearch<cr>
+map ,f :action FindUsages<cr>
+map M :action Run<cr>
