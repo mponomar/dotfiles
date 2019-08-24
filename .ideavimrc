@@ -3,7 +3,7 @@ set hlsearch
 set incsearch
 map S <esc>:nohlsearch<cr>
 map ,f :action FindUsages<cr>
-map ,c :action CloseActiveTab<cr>:action HideAllWindows<cr>
+map ,c :action HideAllWindows<cr>
 map ,s :action Stop<cr>
 map ,r :action Debug<cr>
 map ,q :action QuickJavaDoc<cr>
