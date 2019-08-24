@@ -14,16 +14,16 @@ focus-mode='sloppy'
 action-double-click-titlebar='toggle-shade'
 
 [org/gnome/desktop/wm/keybindings]
-switch-to-workspace-1=['<Alt>1']
-switch-to-workspace-2=['<Alt>2']
-switch-to-workspace-3=['<Alt>3']
-move-to-workspace-1=['<Shift><Alt>exclam']
-move-to-workspace-2=['<Shift><Alt>at']
-move-to-workspace-3=['<Shift><Alt>numbersign']
-move-to-workspace-4=['<Shift><Alt>dollar']
-switch-to-workspace-4=['<Alt>4']
+switch-to-workspace-1=['<Alt>F1']
+switch-to-workspace-2=['<Alt>F2']
+switch-to-workspace-3=['<Alt>F3']
+switch-to-workspace-4=['<Alt>F4']
+move-to-workspace-1=['<Shift><Alt>F1']
+move-to-workspace-2=['<Shift><Alt>F2']
+move-to-workspace-3=['<Shift><Alt>F3']
+move-to-workspace-4=['<Shift><Alt>F4']
 [org/gnome/settings-daemon/plugins/media-keys]
-terminal='<Alt>Return'
+terminal='<Alt><Ctrl>T'
 www='<Alt>b'
 
 
