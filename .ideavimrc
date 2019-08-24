@@ -10,3 +10,5 @@ map ,q :action QuickJavaDoc<cr>
 map > :action GotoNextError<cr>
 map < :action GotoPreviousError<cr>
 map M :action Run<cr>
+map ,b :action ToggleLineBreakpoint<cr>
+map ,h :action CallHierarchy<cr>
