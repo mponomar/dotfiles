@@ -8,7 +8,7 @@ cp -r $(cat precious) $HOME/
 echo "[[ -f \$HOME/.bashrc.mike ]] && . \$HOME/.bashrc.mike" >> $HOME/.bashrc
 sudo usermod -a -G docker $(id -u -n)
 sudo timedatectl set-local-rtc 1
-sudo apt install -y git build-essential meld python3 python3-dev golang clang clang-format cmake make ninja-build nodejs npm vim tmux vim valgrind cproto golang-golang-x-tools fonts-hack-ttf net-tools chromium-browser openssh-server docker.io docker-compose htop bear k4dirstat jq
+apt install -y apt-file bear build-essential chromium-browser clang clang-format cmake cproto ctags docker-compose docker.io fonts-hack-ttf git golang golang-golang-x-tools htop jq k4dirstat make meld net-tools ninja-build nodejs npm openssh-server python3 python3-dev tmux valgrind vim
 git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/
@@ -35,3 +35,4 @@ git remote add tim https://github.com/timmui/comdb2
 sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadline-dev libsqlite3-dev libssl-dev libunwind-dev libz1 libz-dev make gawk protobuf-c-compiler uuid-dev liblz4-tool liblz4-dev libprotobuf-c1 libsqlite3-0 libuuid1 libz1 tzdata ncurses-dev tcl bc
 ssh-keygen  -N '' -f ~/.ssh/id_rsa
 sudo apt autoremove -y
+sudo apt-file update
