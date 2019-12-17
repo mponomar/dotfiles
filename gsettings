@@ -22,10 +22,16 @@ move-to-workspace-1=['<Shift><Alt>F1']
 move-to-workspace-2=['<Shift><Alt>F2']
 move-to-workspace-3=['<Shift><Alt>F3']
 move-to-workspace-4=['<Shift><Alt>F4']
+panel-run-dialog=['<Alt>F5']
+
 [org/gnome/settings-daemon/plugins/media-keys]
-terminal='<Alt><Ctrl>T'
+terminal='<Alt>t'
 www='<Alt>b'
 
+[org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0]
+binding='<Alt>z'
+command='zeal'
+name='Zeal'
 
 [org/gnome/terminal/legacy]
 menu-accelerator-enabled=false

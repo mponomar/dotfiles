@@ -6,9 +6,10 @@ sudo apt upgrade
 sudo apt remove -y firefox ubuntu-web-launchers
 cp -r $(cat precious) $HOME/
 echo "[[ -f \$HOME/.bashrc.mike ]] && . \$HOME/.bashrc.mike" >> $HOME/.bashrc
+sudo groupadd docker
 sudo usermod -a -G docker $(id -u -n)
 sudo timedatectl set-local-rtc 1
-apt install -y apt-file bear build-essential chromium-browser clang clang-format cmake cproto ctags docker-compose docker.io fonts-hack-ttf git golang golang-golang-x-tools htop jq k4dirstat make meld net-tools ninja-build nodejs npm openssh-server python3 python3-dev tmux valgrind vim
+sudo apt install -y git build-essential meld python3 python3-dev golang clang clang-format cmake make ninja-build nodejs npm vim tmux vim valgrind cproto golang-golang-x-tools fonts-hack-ttf net-tools chromium-browser openssh-server docker.io docker-compose htop bear jq cmake-curses-gui qdirstat ack kcachegrind ctags zeal
 git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/
