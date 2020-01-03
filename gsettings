@@ -14,6 +14,7 @@ focus-mode='sloppy'
 action-double-click-titlebar='toggle-shade'
 
 [org/gnome/desktop/wm/keybindings]
+close=@as []
 switch-to-workspace-1=['<Alt>F1']
 switch-to-workspace-2=['<Alt>F2']
 switch-to-workspace-3=['<Alt>F3']
@@ -23,6 +24,7 @@ move-to-workspace-2=['<Shift><Alt>F2']
 move-to-workspace-3=['<Shift><Alt>F3']
 move-to-workspace-4=['<Shift><Alt>F4']
 panel-run-dialog=['<Alt>F5']
+unmaximize=@as []
 
 [org/gnome/settings-daemon/plugins/media-keys]
 terminal='<Alt>t'
