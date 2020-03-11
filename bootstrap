@@ -15,6 +15,8 @@ vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/
 python3 ./install.py --clang-completer --go-completer --js-completer
 cd $dir
+mkdir -p ${HOME}/bin
+cp bin/* ${HOME}/bin
 dconf load / < gsettings
 cd $HOME
 mkdir comdb2

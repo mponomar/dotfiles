@@ -1,0 +1,409 @@
+#!/bin/bash
+
+export PATH=$PATH:/opt/bb/bin
+
+dir=$HOME/.local/share/comdb2-util
+config=$dir/config.sqlite
+
+function get {
+	sqlite3 ${config} <<EOF
+create table if not exists getput(k, v);
+select v from getput where k='$1';
+EOF
+}
+
+function put {
+if [[ $# -ne 2 ]]; then
+    echo "Usage: key value"
+    exit 1
+fi
+sqlite3 ${config} <<EOF
+create table if not exists getput(k, v);
+delete from getput where k='$1';
+insert into getput(k, v) values('$1', '$2');
+EOF
+}
+
+function container-name {
+    local prefix
+    prefix=$(get mach-prefix)
+    echo "${prefix}$1"
+}
+
+function sanity-checks {
+    env=$(systemctl  show --property=Environment docker | sed 's/Environment=//g')
+    if [[ -z "$env" ]]; then
+        echo "\$ systemctl  show --property=Environment docker"
+        echo "WARNING: Docker doesn't have any environment settings.  Missing proxy settings?"
+    fi
+    if [[ ! -s ${dir}/proxy.conf ]]; then
+        echo "WARNING: Didn't find a proxy.conf, created an empty one.  "
+        echo "         Drop one into ~/.local/comdb2/proxy.conf and I'll use that one"
+    fi
+}
+
+function create-or-copy {
+    if [[ -f $1 ]]; then
+        cp $1 $2
+    else
+        touch $2
+    fi
+}
+
+function interactive-init {
+    mkdir -p ${dir}
+    local v
+    printf "Machine name prefix [m]: "
+    read v
+    [[ -z "$v" ]] && v=m
+    put mach-prefix $v
+    printf "Cluster size [4]: "
+    read v
+    [[ -z "$v" ]] && v=4
+    put clusternum $v
+    v=""
+    local defdb=$(whoami)db
+    printf "Default db name [$defdb]: "
+    read v
+    [[ -z "$v" ]] && v=$defdb
+    put defaultdb $v
+    v=""
+    while [[ -z "$v" ]]; do
+        printf "Comdb2 source root [$HOME/comdb2/src]: "
+        read v
+        [[ -z "$v" ]] && v="${HOME}/comdb2/src"
+    done
+    put src $v
+    v="ubuntu:latest"
+    printf "Base docker image [$v]: "
+    read v
+    [[ -z "$v" ]] && v=ubuntu:latest
+    put base $v
+
+    docker network ls | grep -qw "comdb2"
+    [[ $? -ne 0 ]] && docker network create comdb2
+
+    create-or-copy ${HOME}/.local/comdb2/proxy.conf ${dir}/proxy.conf
+
+    sanity-checks
+}
+
+function build {
+	DIR=$(mktemp -d)
+	pushd $DIR
+	cat >> Dockerfile <<- EOF
+		FROM $base
+		ENV DEBIAN_FRONTEND=noninteractive
+		$(cat ${dir}/proxy.conf)
+		RUN apt-get update
+		RUN apt-get install -y		\
+			bc			\
+			cmake			\
+			figlet			\
+			gawk			\
+			gdb			\
+			less			\
+			libevent-2.1		\
+			libevent-core-2.1	\
+			libevent-openssl-2.1	\
+			libevent-pthreads-2.1	\
+			libprotobuf-c1		\
+			libreadline-dev		\
+			libsqlite3-0		\
+			libunwind8		\
+			liblz4-tool		\
+			make			\
+			netcat-openbsd		\
+			openssh-client		\
+			openssh-server		\
+			openssl			\
+			psmisc			\
+            sqlite3         \
+			strace			\
+			tzdata			\
+			valgrind		\
+			vim
+	EOF
+	create-or-copy $HOME/.vimrc vimrc
+	create-or-copy $HOME/.inputrc inputrc
+	create-or-copy $HOME/.gdbinit gdbinit
+	create-or-copy $HOME/.bash_aliases bash_profile
+    create-or-copy ${dir}/proxy.conf proxy.conf
+    mkdir comdb2-util
+    cp $dir/* comdb2-util
+    cp $0 .
+	cat >> bash_profile <<- EOF
+		export SKIPSSL=1
+		export TESTDIR=/opt/bb/tmp/testdir
+		export SKIP_COPY_EXE=1
+		export SKIPDEBUG=1
+		$(cat ${dir}/proxy.conf)
+        export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$HOME/bin:/opt/bb/bin
+	EOF
+	ssh-keygen -q -t rsa -N '' -f $PWD/id_rsa
+	cat > config <<- EOF
+		LogLevel=quiet
+		HOST m*
+			StrictHostKeyChecking no
+	EOF
+	cat >> Dockerfile <<- EOF
+		RUN mkdir -p /opt/bb/bin /opt/bb/etc/cdb2/config.d /opt/bb/include /opt/bb/lib/cdb2 /opt/bb/lib/pkgconfig /opt/bb/lib/systemd /opt/bb/lib/systemd/system /opt/bb/log/cdb2 /opt/bb/var/cdb2 /opt/bb/var/lib/cdb2 /opt/bb/var/log/cdb2 /opt/bb/tmp
+		RUN ln -s /root/src/build/db/comdb2			/opt/bb/bin/
+		RUN ln -s /root/src/build/db/comdb2dumpcsc		/opt/bb/bin/
+		RUN ln -s /root/src/build/db/copycomdb2			/opt/bb/bin/
+		RUN ln -s /root/src/build/tools/pmux/pmux		/opt/bb/bin/
+		RUN ln -s /root/src/build/tools/comdb2ar/comdb2ar	/opt/bb/bin/
+		RUN ln -s /root/src/build/tools/cdb2sql/cdb2sql		/opt/bb/bin/
+		RUN ln -s /opt/bb/bin/comdb2	/opt/bb/bin/cdb2_dump
+		RUN ln -s /opt/bb/bin/comdb2 	/opt/bb/bin/cdb2_printlog
+		RUN ln -s /opt/bb/bin/comdb2 	/opt/bb/bin/cdb2_stat
+		RUN ln -s /opt/bb/bin/comdb2 	/opt/bb/bin/cdb2_load
+		RUN ln -s /opt/bb/bin/comdb2 	/opt/bb/bin/cdb2_sqlreply
+		RUN ln -s /opt/bb/bin/comdb2	/opt/bb/bin/cdb2_verify
+		RUN mkdir /root/.ssh /var/run/sshd
+		RUN touch		/root/.hushlogin
+		COPY config		/root/.ssh/config
+		COPY id_rsa		/root/.ssh/id_rsa
+		COPY id_rsa.pub		/root/.ssh/id_rsa.pub
+		COPY id_rsa.pub		/root/.ssh/authorized_keys
+		COPY vimrc		/root/.vimrc
+		COPY inputrc		/root/.inputrc
+		COPY bash_profile	/root/.bash_profile
+		COPY gdbinit		/root/.gdbinit
+        COPY comdb2-util    /root/.local/share/comdb2-util/
+        COPY cluster    /root/bin/cluster
+	EOF
+	docker build -t comdb2:dev .
+	popd
+	rm -rf $DIR
+}
+
+function run {
+	n=$1
+    [[ $n -lt 1 ]] && n=$(get clusternum)
+    [[ $n -lt 1 ]] && usage
+	put clusternum $n
+	declare -a names
+	for ((i=0;i<=$n;++i)); do
+		name=$(container-name $i)
+		[[ $i -gt 0 ]] && names+=(${name})
+		docker run --ulimit nofile=10000:10000 -it -d --privileged --mount type=tmpfs,destination=/opt/bb:exec --network comdb2 \
+		    -v $HOME/bin:/root/bin -v $HOME/.vim:/root/.vim -v ${src}:/root/src \
+		    --name ${name} --hostname ${name} comdb2:dev /usr/sbin/sshd -D &
+	done
+	wait
+	for ((i=0;i<=$n;++i)); do
+		name=$(container-name $i)
+		cluster_cmd='echo export CLUSTER=\"'"${names[@]}"'\" >> /root/.bash_profile'
+		docker exec -it ${name} /bin/bash -c "${cluster_cmd}"
+	done
+}
+
+function do_docker {
+	declare -a names
+	n=$(get clusternum)
+	for ((i=0;i<=${n};++i)); do
+		names+=($(container-name $i))
+	done
+	docker $1 ${names[@]}
+}
+
+function tmux_int {
+	/usr/bin/tmux new-window
+	/usr/bin/tmux send-keys "printf '"'\033]2;%s\033\\'"' ${prefix}1" Enter
+	/usr/bin/tmux send-keys "${HOME}/bin/cluster c 1" Enter
+	n=$(get clusternum)
+	for ((i=2;i<=$n;++i)); do
+		/usr/bin/tmux split-window
+		/usr/bin/tmux send-keys "printf '"'\033]2;%s\033\\'"' ${prefix}${i}" Enter
+		/usr/bin/tmux send-keys "$HOME/bin/cluster c ${i}" Enter
+		/usr/bin/tmux select-layout tiled
+	done
+}
+
+function sync_panes {
+	/usr/bin/tmux set-window-option synchronize-panes
+	/usr/bin/tmux set-option window-status-style "bg=colour124"
+	/usr/bin/tmux set-option pane-active-border-style "fg=colour124"
+}
+
+function tmux {
+	tmux_int
+	sync_panes
+}
+
+function db {
+	tmux_int
+	sync_panes
+	/usr/bin/tmux send-keys "comdb2 $1" Enter
+}
+
+function pmux {
+	tmux_int
+	sync_panes
+	/usr/bin/tmux send-keys "pmux -f" Enter
+}
+
+function create {
+	set -e
+	dir="/opt/bb/var/cdb2/$1"
+	rm -rf  $dir
+	comdb2 --create $1 --dir $dir --tunable 'sqlenginepool.maxt 50'
+}
+
+function copy {
+	dir="/opt/bb/var/cdb2/$1"
+	lrl="$dir/$1.lrl"
+	cfg="/opt/bb/etc/cdb2/config.d/$1.cfg"
+	echo "cluster nodes $CLUSTER" >> $lrl
+	for c in $CLUSTER; do echo -n "$c "; ssh $c rm -rf $dir; scp $cfg $c: > /dev/null; copycomdb2 $lrl $c: & done
+	wait
+	echo ""
+}
+
+function cfg {
+	cfg="/opt/bb/etc/cdb2/config.d/$1.cfg"
+	cat > $cfg <<- EOF
+		$1 ${CLUSTER}
+		comdb2_config:default_type docker
+		comdb2_config:allow_pmux_route:true
+	EOF
+}
+
+function setup {
+    local isdocker
+    isdocker=$(cat /proc/self/cgroup | cut -d/ -f2 | head -1)
+    if [[ "$isdocker" != "docker" ]]; then
+        docker exec $(container-name 0) /root/bin/cluster setup $*
+        return $?
+    fi
+
+    . /root/.bash_profile
+	cfg $1
+	create $1
+	copy $1
+}
+
+function gdb {
+	tmux_int
+	sync_panes
+	/usr/bin/tmux send-keys "gdb -q -ex run -args comdb2 $1" Enter
+}
+
+function vg {
+	tmux_int
+	sync_panes
+	/usr/bin/tmux send-keys "valgrind comdb2 ${defaultdb}" Enter
+}
+
+function check-containers-ready {
+    local prefix=$(get mach-prefix)
+    local err=0
+    for i in $(seq 0 $(get clusternum)); do
+        local chk=$(docker ps --filter name=${prefix}${i} --format '{{.ID}}')
+        if [[ -z "$chk" ]]; then
+            echo "${prefix}${i} isn't up - \"$(basename $0) start\" to bring up cluster"
+            err=1
+        fi
+    done
+    return $err
+}
+
+function usage {
+	cat >&2 <<- EOF
+		Usage: cluster <cmd> [arg]
+
+		cmd list:
+		  db [dbname] ----------- Start database cluster-wide
+		  build ----------------- Build docker image
+		  clean ----------------- Kill and remove containers
+		  c|clnt [n] ------------ Get a shell on nth container
+		  copy [dbname] --------- Copy db cluster-wide
+		  setup [dbname] -------- Create db and copy it cluster-wide
+		  gdb [dbname] ---------- Start db under gdb cluster-wide
+		  info  ----------------- Dump settings
+		  init  ----------------- Wipe settings and start from scratch
+		  kill  ----------------- Kill containers
+		  pmux  ----------------- Start pmux cluster-wide
+		  ps    ----------------- List containers
+		  rm    ----------------- Remove containers
+		  run <cluster-size> ---- Initial run of containers
+		  start ----------------- Start containers
+		  stop  ----------------- Stop containers
+		  test [n] -------------- Run tests n at a time (default 1)
+		  tmux  ----------------- Container tmux panes
+		  vg    ----------------- Start database under valgrind
+	EOF
+	exit 1
+}
+
+if [[ ! -d "${dir}" ]]; then 
+    if [[ "$1" != "init" ]]; then
+        echo "Can't find my config files, did you run \"$(basename $0) init\"?"
+        exit 1
+    else
+        interactive-init
+        rc=$?
+        [[ $? -eq 0 ]] && echo I AM READY
+        exit $?
+    fi
+fi
+
+defaultdb=$(get defaultdb)
+src=$(get src)
+base=$(get base)
+
+if [[ "$1" == "build" ]]; then
+	build
+elif [[ "$1" == "clean" ]]; then
+	do_docker "kill" > /dev/null
+	do_docker "rm"
+elif [[ "$1" == "run" ]]; then
+	run $2
+elif [[ "$1" == "rm" ]] || [[ "$1" == "stop" ]] || [[ "$1" == "kill" ]] || [[ "$1" == "start" ]]; then
+	do_docker "$1"
+elif [[ "$1" == "tmux" ]]; then
+    check-containers-ready || exit 1
+	tmux
+elif [[ "$1" == "db" ]]; then
+    check-containers-ready || exit 1
+	db ${2:-${defaultdb}}
+elif [[ "$1" == "pmux" ]]; then
+    check-containers-ready || exit 1
+	pmux
+elif [[ "$1" == "copy" ]]; then
+    check-containers-ready || exit 1
+	copy ${2:-${defaultdb}}
+elif [[ "$1" == "setup" ]]; then
+    check-containers-ready || exit 1
+	setup ${2:-${defaultdb}}
+elif [[ "$1" == "cfg" ]]; then
+	cfg ${2:-${defaultdb}}
+elif [[ "$1" == "gdb" ]]; then
+	gdb ${2:-${defaultdb}}
+elif [[ "$1" == "vg" ]]; then
+	vg
+elif [[ "$1" == "info" ]]; then
+    sqlite3 -separator '	' ${config} "select * from getput"
+elif [[ "$1" == "init" ]]; then
+    rm -fr ${dir}
+    interactive-init
+elif [[ "$1" == "c" || "$1" == "clnt" ]]; then
+    shift
+    n=$*
+    [[ -z "$1" ]] && n=0
+    n=$(container-name $n)
+    [[ -z "$n" ]] && usage
+    figlet $n
+    docker exec -ti $n /bin/bash -l
+elif [[ "$1" == "test" ]]; then
+    do_docker stop 2>/dev/null
+    do_docker start
+    n=$(container-name 0)
+    docker exec $n bash -c '. ~/.bashrc && cd /root/src/tests && make'
+elif [[ "$1" == "ps" ]]; then
+	figlet $(get clusternum)
+	docker ps -a
+else
+	usage
+fi
