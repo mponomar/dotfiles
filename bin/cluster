@@ -39,6 +39,7 @@ function sanity-checks {
     if [[ ! -s ${dir}/proxy.conf ]]; then
         echo "WARNING: Didn't find a proxy.conf, created an empty one.  "
         echo "         Drop one into ~/.local/comdb2/proxy.conf and I'll use that one"
+        echo "         This should be a Dockerfile fragment with ENV http proxy variables"
     fi
 }
 
@@ -50,7 +51,32 @@ function create-or-copy {
     fi
 }
 
+function docker-sanity-check {
+    id | grep -q '(docker)'
+    if [[ $? -ne 0 ]]; then
+        echo "Current user not in the docker group - may not be able to use docker"
+    fi
+    docker info >/dev/null 2>/dev/null
+    if [[ $? -ne 0 ]]; then
+        echo "Can't run docker commands - is docker installed? (apt install docker.io docker-compose)"
+        echo "Can't run docker commands - is docker running    (sudo systemctl restart docker)"
+        return 1
+    fi
+    return 0
+}
+
 function interactive-init {
+    docker-sanity-check
+    
+    local defsource="ubuntu:latest"
+    if [[ -f /etc/lsb-release ]]; then
+        source /etc/lsb-release
+        if [[ $? -eq 0 ]]; then
+            if [[ "$DISTRIB_ID" = "Ubuntu" && -n "$DISTRIB_CODENAME" ]]; then
+                defsource="ubuntu:$DISTRIB_CODENAME"
+            fi
+        fi
+    fi
     mkdir -p ${dir}
     local v
     printf "Machine name prefix [m]: "
@@ -74,10 +100,10 @@ function interactive-init {
         [[ -z "$v" ]] && v="${HOME}/comdb2/src"
     done
     put src $v
-    v="ubuntu:latest"
+    v="$defsource"
     printf "Base docker image [$v]: "
     read v
-    [[ -z "$v" ]] && v=ubuntu:latest
+    [[ -z "$v" ]] && v=$defsource
     put base $v
 
     docker network ls | grep -qw "comdb2"
@@ -137,9 +163,9 @@ function build {
 		export TESTDIR=/opt/bb/tmp/testdir
 		export SKIP_COPY_EXE=1
 		export SKIPDEBUG=1
-		$(cat ${dir}/proxy.conf)
         export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$HOME/bin:/opt/bb/bin
 	EOF
+    grep ENV proxy.conf | sed 's/ENV /export /g' >> bash_profile
 	ssh-keygen -q -t rsa -N '' -f $PWD/id_rsa
 	cat > config <<- EOF
 		LogLevel=quiet
@@ -274,6 +300,7 @@ function setup {
     local isdocker
     isdocker=$(cat /proc/self/cgroup | cut -d/ -f2 | head -1)
     if [[ "$isdocker" != "docker" ]]; then
+        check-containers-ready || exit 1
         docker exec $(container-name 0) /root/bin/cluster setup $*
         return $?
     fi
@@ -302,11 +329,66 @@ function check-containers-ready {
     for i in $(seq 0 $(get clusternum)); do
         local chk=$(docker ps --filter name=${prefix}${i} --format '{{.ID}}')
         if [[ -z "$chk" ]]; then
-            echo "${prefix}${i} isn't up - \"$(basename $0) start\" to bring up cluster"
+            echo "${prefix}${i} isn't up - \"$(basename $0) run\" to bring up cluster"
             err=1
         fi
     done
     return $err
+}
+
+function docker-status {
+    docker-sanity-check
+
+    img=$(docker images --format "{{.ID}}" comdb2:dev)
+    if [[ -z "$img" ]]; then
+        echo "No comdb2:dev image, \"$(basename $0) build\" to create"
+        return 1
+    fi
+    echo "Have image"
+
+    check-containers-ready
+    if [[ $? -eq 0 ]]; then
+        echo "Containers up!"
+    else
+        echo "Containers not up"
+        return 1
+    fi
+
+    local err=0
+    for i in $(seq 1 $(get clusternum)); do
+        local mach=$(get mach-prefix)${i}
+        docker exec $mach ps -ef | grep -q pmux
+        if [[ $? -ne 0 ]]; then
+            echo "${mach}: pmux not running on $mach, \"$(basename $0) pmux\" to start"
+            err=1
+        fi
+    done
+    [[ $err -ne 0 ]] && return $err 
+    echo "pmux up"
+
+    for i in $(seq 1 $(get clusternum)); do
+        local mach=$(get mach-prefix)${i}
+        local cnt=$(docker exec $mach ls -1 /opt/bb/var/cdb2 | wc -l)
+        if [[ $cnt -eq 0 ]]; then
+            echo "${mach}: no databases are set up, \"$(basename $0) setup [dbname]\" to start"
+            err=1
+        fi
+    done
+    [[ $err -ne 0 ]] && return $err 
+    echo "Databases set up"
+
+    for i in $(seq 1 $(get clusternum)); do
+        local mach=$(get mach-prefix)${i}
+        local cnt=$(docker exec $mach ps -ef | grep comdb2 | wc -l)
+        if [[ $cnt -eq 0 ]] ; then
+            echo "${mach}: no databases running"
+            err=1
+        fi
+    done
+    [[ $err -ne 0 ]] && return $err 
+
+    echo "Databases running."
+    return 0
 }
 
 function usage {
@@ -328,6 +410,7 @@ function usage {
 		  ps    ----------------- List containers
 		  rm    ----------------- Remove containers
 		  run <cluster-size> ---- Initial run of containers
+		  status ---------------- Check container status
 		  start ----------------- Start containers
 		  stop  ----------------- Stop containers
 		  test [n] -------------- Run tests n at a time (default 1)
@@ -375,7 +458,6 @@ elif [[ "$1" == "copy" ]]; then
     check-containers-ready || exit 1
 	copy ${2:-${defaultdb}}
 elif [[ "$1" == "setup" ]]; then
-    check-containers-ready || exit 1
 	setup ${2:-${defaultdb}}
 elif [[ "$1" == "cfg" ]]; then
 	cfg ${2:-${defaultdb}}
@@ -404,6 +486,8 @@ elif [[ "$1" == "test" ]]; then
 elif [[ "$1" == "ps" ]]; then
 	figlet $(get clusternum)
 	docker ps -a
+elif [[ "$1" == "status" ]]; then
+    docker-status
 else
 	usage
 fi
