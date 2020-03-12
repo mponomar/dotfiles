@@ -6,6 +6,10 @@ dir=$HOME/.local/share/comdb2-util
 config=$dir/config.sqlite
 
 function get {
+    if [[ ! -f ${config} ]]; then
+        echo "No config?"
+        exit 1
+    fi
 	sqlite3 ${config} <<EOF
 create table if not exists getput(k, v);
 select v from getput where k='$1';
@@ -38,7 +42,7 @@ function sanity-checks {
     fi
     if [[ ! -s ${dir}/proxy.conf ]]; then
         echo "WARNING: Didn't find a proxy.conf, created an empty one.  "
-        echo "         Drop one into ~/.local/comdb2/proxy.conf and I'll use that one"
+        echo "         Drop one into ~/.local/share/comdb2/proxy.conf and I'll use that one"
         echo "         This should be a Dockerfile fragment with ENV http proxy variables"
     fi
 }
@@ -65,7 +69,15 @@ function docker-sanity-check {
     return 0
 }
 
+function create-persist {
+    mkdir -p ${dir}/persist/logs
+    for ((i=0;i<=$(get clusternum);i++)); do
+        mkdir -p ${dir}/persist/$(get mach-prefix)${i}
+    done
+}
+
 function interactive-init {
+    clean-persist
     docker-sanity-check
     
     local defsource="ubuntu:latest"
@@ -105,11 +117,40 @@ function interactive-init {
     read v
     [[ -z "$v" ]] && v=$defsource
     put base $v
+    printf "Persist db images? [0]: "
+    read v
+    if [[ "$v" = "y" || $v = "1" ]]; then
+        v=1
+    else
+        v=0
+    fi
+    put persist $v
+    printf "Auto-start pmux? [1]: "
+    read v
+    if [[ "$v" = "n" || $v = "0" ]]; then
+        v=0
+    else
+        v=1
+    fi
+    put auto-pmux $v
+    if [[ $(get persist) = 1 ]]; then
+        printf "Auto-start database? [1]: "
+        read v
+        if [[ "$v" = "n" || $v = "0" ]]; then
+            v=0
+        else
+            v=1
+        fi
+        put auto-db $v
+    else
+        put auto-db 0
+    fi
 
     docker network ls | grep -qw "comdb2"
     [[ $? -ne 0 ]] && docker network create comdb2
 
-    create-or-copy ${HOME}/.local/comdb2/proxy.conf ${dir}/proxy.conf
+    create-or-copy ${HOME}/.local/share/comdb2/proxy.conf ${dir}/proxy.conf
+    create-persist
 
     sanity-checks
 }
@@ -204,6 +245,25 @@ function build {
 	rm -rf $DIR
 }
 
+function start-cluster-jobs {
+    if [[ $(get auto-pmux) = 1 ]]; then
+        echo "starting pmux"
+    	for ((i=0;i<=$n;++i)); do
+            name=$(container-name $i)
+            docker exec ${name} /opt/bb/bin/pmux > ${dir}/persist/logs/${name}.pmux
+        done
+        sleep 1
+    fi
+    if [[ $(get auto-db) = 1 ]]; then
+        echo "starting db"
+    	for ((i=0;i<=$n;++i)); do
+            name=$(container-name $i)
+            db=$(get defaultdb)
+            docker exec ${name} /opt/bb/bin/comdb2 $db > ${dir}/persist/logs/${name}.${db} 2>&1 &
+        done
+    fi
+}
+
 function run {
 	n=$1
     [[ $n -lt 1 ]] && n=$(get clusternum)
@@ -213,9 +273,15 @@ function run {
 	for ((i=0;i<=$n;++i)); do
 		name=$(container-name $i)
 		[[ $i -gt 0 ]] && names+=(${name})
+        local dbfs=""
+        if [[ $persist -eq 1 ]]; then 
+            dbfs="-v ${dir}/persist/${name}:/opt/bb/var"
+        fi
+        set -x
 		docker run --ulimit nofile=10000:10000 -it -d --privileged --mount type=tmpfs,destination=/opt/bb:exec --network comdb2 \
-		    -v $HOME/bin:/root/bin -v $HOME/.vim:/root/.vim -v ${src}:/root/src \
+		    -v $HOME/bin:/root/bin -v $HOME/.vim:/root/.vim -v ${src}:/root/src $dbfs \
 		    --name ${name} --hostname ${name} comdb2:dev /usr/sbin/sshd -D &
+        set +x
 	done
 	wait
 	for ((i=0;i<=$n;++i)); do
@@ -223,6 +289,12 @@ function run {
 		cluster_cmd='echo export CLUSTER=\"'"${names[@]}"'\" >> /root/.bash_profile'
 		docker exec -it ${name} /bin/bash -c "${cluster_cmd}"
 	done
+
+    if [[ $(get auto-db) = 1 ]]; then
+        echo "setting up databases"
+        cluster setup
+    fi
+    start-cluster-jobs
 }
 
 function do_docker {
@@ -259,26 +331,50 @@ function tmux {
 }
 
 function db {
-	tmux_int
-	sync_panes
-	/usr/bin/tmux send-keys "comdb2 $1" Enter
+    isdocker=$(cat /proc/self/cgroup | cut -d/ -f2 | head -1)
+    if [[ "$isdocker" == "docker" ]]; then
+        echo "Please run this outside docker"
+        exit 1
+    fi
+
+    if [[ -n "$TMUX" ]]; then
+        tmux_int
+        sync_panes
+        /usr/bin/tmux send-keys "comdb2 $1" Enter
+    else
+        local n=$(get clusternum)
+        for ((i=1;i<=$n;++i)); do
+            local mach=$(container-name $i)
+            docker exec ${mach} /opt/bb/bin/comdb2 $1 &
+        done
+    fi
 }
 
 function pmux {
-	tmux_int
-	sync_panes
-	/usr/bin/tmux send-keys "pmux -f" Enter
+    if [[ -n "$TMUX" && "$1" != "-n" ]]; then
+        tmux_int
+        sync_panes
+        /usr/bin/tmux send-keys "pmux -f" Enter
+    else
+        local n=$(get clusternum)
+        for ((i=1;i<=$n;++i)); do
+            local mach=$(container-name $i)
+            docker exec ${mach} /opt/bb/bin/pmux
+        done
+    fi
 }
 
 function create {
 	set -e
-	dir="/opt/bb/var/cdb2/$1"
+	local dir="/opt/bb/var/cdb2/$1"
+    mkdir -p $dir
+    mkdir -p /opt/bb/var/log/cdb2
 	rm -rf  $dir
 	comdb2 --create $1 --dir $dir --tunable 'sqlenginepool.maxt 50'
 }
 
 function copy {
-	dir="/opt/bb/var/cdb2/$1"
+	local dir="/opt/bb/var/cdb2/$1"
 	lrl="$dir/$1.lrl"
 	cfg="/opt/bb/etc/cdb2/config.d/$1.cfg"
 	echo "cluster nodes $CLUSTER" >> $lrl
@@ -391,6 +487,10 @@ function docker-status {
     return 0
 }
 
+function clean-persist {
+    sudo rm -fr ${dir}/persist
+}
+
 function usage {
 	cat >&2 <<- EOF
 		Usage: cluster <cmd> [arg]
@@ -435,16 +535,23 @@ fi
 defaultdb=$(get defaultdb)
 src=$(get src)
 base=$(get base)
+persist=$(get persist)
+clusternum=$(get clusternum)
 
 if [[ "$1" == "build" ]]; then
 	build
 elif [[ "$1" == "clean" ]]; then
 	do_docker "kill" > /dev/null
+    clean-persist
 	do_docker "rm"
+    create-persist
 elif [[ "$1" == "run" ]]; then
 	run $2
 elif [[ "$1" == "rm" ]] || [[ "$1" == "stop" ]] || [[ "$1" == "kill" ]] || [[ "$1" == "start" ]]; then
 	do_docker "$1"
+    if [[ "$1" == "start" ]]; then
+        start-cluster-jobs
+    fi
 elif [[ "$1" == "tmux" ]]; then
     check-containers-ready || exit 1
 	tmux
@@ -452,8 +559,9 @@ elif [[ "$1" == "db" ]]; then
     check-containers-ready || exit 1
 	db ${2:-${defaultdb}}
 elif [[ "$1" == "pmux" ]]; then
+    shift
     check-containers-ready || exit 1
-	pmux
+	pmux $*
 elif [[ "$1" == "copy" ]]; then
     check-containers-ready || exit 1
 	copy ${2:-${defaultdb}}
