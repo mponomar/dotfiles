@@ -276,12 +276,12 @@ function run {
         local dbfs=""
         if [[ $persist -eq 1 ]]; then 
             dbfs="-v ${dir}/persist/${name}:/opt/bb/var"
+        else
+            dbfs="--mount type=tmpfs,destination=/opt/bb:exec"
         fi
-        set -x
-		docker run --ulimit nofile=10000:10000 -it -d --privileged --mount type=tmpfs,destination=/opt/bb:exec --network comdb2 \
-		    -v $HOME/bin:/root/bin -v $HOME/.vim:/root/.vim -v ${src}:/root/src $dbfs \
+		docker run --ulimit nofile=10000:10000 -it -d --privileged $dbfs --network comdb2 \
+		    -v $HOME/bin:/root/bin -v $HOME/.vim:/root/.vim -v ${src}:/root/src \
 		    --name ${name} --hostname ${name} comdb2:dev /usr/sbin/sshd -D &
-        set +x
 	done
 	wait
 	for ((i=0;i<=$n;++i)); do
@@ -423,9 +423,15 @@ function check-containers-ready {
     local prefix=$(get mach-prefix)
     local err=0
     for i in $(seq 0 $(get clusternum)); do
-        local chk=$(docker ps --filter name=${prefix}${i} --format '{{.ID}}')
+        local mach=$(container-name $i)
+        local chk=$(docker ps --filter name=${mach} --format '{{.ID}}')
         if [[ -z "$chk" ]]; then
-            echo "${prefix}${i} isn't up - \"$(basename $0) run\" to bring up cluster"
+            chk=$(docker ps -a --filter name=${mach} --format '{{.Status}}')
+            if [[ "$chk" = Exited* ]]; then
+                echo "${prefix}${i} stopped - \"$(basename $0) start\" to bring up cluster"
+            else
+                echo "${prefix}${i} isn't up - \"$(basename $0) run\" to bring up cluster"
+            fi
             err=1
         fi
     done
