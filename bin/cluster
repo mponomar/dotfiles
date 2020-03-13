@@ -133,18 +133,18 @@ function interactive-init {
         v=1
     fi
     put auto-pmux $v
-    if [[ $(get persist) = 1 ]]; then
-        printf "Auto-start database? [1]: "
-        read v
-        if [[ "$v" = "n" || $v = "0" ]]; then
-            v=0
-        else
-            v=1
-        fi
-        put auto-db $v
+    printf "Auto-start database? [0]: "
+    read v
+    if [[ "$v" = "y" || $v = "1" ]]; then
+        v=1
     else
-        put auto-db 0
+        v=0
     fi
+    put auto-db $v
+    printf "Test parallel jobs? [4]: "
+    read v
+    [[ -z "$v" ]] && v=4
+    put testjobs 4
 
     docker network ls | grep -qw "comdb2"
     [[ $? -ne 0 ]] && docker network create comdb2
@@ -543,6 +543,7 @@ src=$(get src)
 base=$(get base)
 persist=$(get persist)
 clusternum=$(get clusternum)
+testjobs=$(get testjobs)
 
 if [[ "$1" == "build" ]]; then
 	build
@@ -593,10 +594,10 @@ elif [[ "$1" == "c" || "$1" == "clnt" ]]; then
     figlet $n
     docker exec -ti $n /bin/bash -l
 elif [[ "$1" == "test" ]]; then
-    do_docker stop 2>/dev/null
-    do_docker start
+    $0 clean 2>/dev/null
+    $0 run
     n=$(container-name 0)
-    docker exec $n bash -c '. ~/.bashrc && cd /root/src/tests && make'
+    docker exec $n bash -c ". ~/.bashrc && cd /root/src/contrib/dev-util && make && TERM=xterm ./testrunner -j ${testjobs} /root/src/tests"
 elif [[ "$1" == "ps" ]]; then
 	figlet $(get clusternum)
 	docker ps -a

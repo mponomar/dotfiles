@@ -9,7 +9,7 @@ echo "[[ -f \$HOME/.bashrc.mike ]] && . \$HOME/.bashrc.mike" >> $HOME/.bashrc
 sudo groupadd docker
 sudo usermod -a -G docker $(id -u -n)
 sudo timedatectl set-local-rtc 1
-sudo apt install -y git build-essential meld python3 python3-dev golang clang clang-format cmake make ninja-build nodejs npm vim tmux vim valgrind cproto golang-golang-x-tools fonts-hack-ttf net-tools chromium-browser openssh-server docker.io docker-compose htop bear jq cmake-curses-gui qdirstat ack kcachegrind ctags zeal apt-file
+sudo apt install -y git build-essential meld python3 python3-dev golang clang clang-format cmake make ninja-build nodejs npm vim tmux vim valgrind cproto golang-golang-x-tools fonts-hack-ttf net-tools chromium-browser openssh-server docker.io docker-compose htop bear jq cmake-curses-gui qdirstat ack kcachegrind ctags zeal apt-file sqlite3
 git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/
