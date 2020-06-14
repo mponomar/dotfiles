@@ -35,7 +35,7 @@ git remote add joe https://github.com/mistachkin/comdb2
 git remote add aakash https://github.com/aakash10292/comdb2
 git remote add james https://github.com/jmleddy/comdb2
 git remote add tim https://github.com/timmui/comdb2
-sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadline-dev libsqlite3-dev libssl-dev libunwind-dev libz1 libz-dev make gawk protobuf-c-compiler uuid-dev liblz4-tool liblz4-dev libprotobuf-c1 libsqlite3-0 libuuid1 libz1 tzdata ncurses-dev tcl bc
+sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadline-dev libsqlite3-dev libssl-dev libunwind-dev libevent-dev libz1 libz-dev make gawk protobuf-c-compiler uuid-dev liblz4-tool liblz4-dev libprotobuf-c1 libsqlite3-0 libuuid1 libz1 tzdata ncurses-dev tcl bc
 ssh-keygen  -N '' -f ~/.ssh/id_rsa
 sudo apt autoremove -y
 sudo apt-file update
