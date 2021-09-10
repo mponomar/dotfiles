@@ -39,16 +39,17 @@ mkdir comdb2
 git clone https://github.com/mponomar/comdb2 comdb2/src
 cd comdb2
 git remote add upstream https://github.com/bloomberg/comdb2
-git remote add adi https://github.com/adizaimi/comdb2
 git remote add rivers https://github.com/riverszhang89/comdb2
-git remote add mark https://github.com/markhannum/comdb2
 git remote add akshat https://github.com/akshatsikarwar/comdb2
 git remote add nirbhay https://github.com/nirbhayc/comdb2
 git remote add dorin https://github.com/dorinhogea/comdb2
 git remote add lingzhi https://github.com/ldennis/comdb2
 git remote add mohit https://github.com/mohitkhullar/comdb2
-git remote add joe https://github.com/mistachkin/comdb2
 git remote add aakash https://github.com/aakash10292/comdb2
+got remote add mohitg https://github.com/mogarg/comdb2
+git remote add adi https://github.com/adizaimi/comdb2
+git remote add mark https://github.com/markhannum/comdb2
+git remote add joe https://github.com/mistachkin/comdb2
 git remote add james https://github.com/jmleddy/comdb2
 git remote add tim https://github.com/timmui/comdb2
 sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadline-dev libsqlite3-dev libssl-dev libunwind-dev libevent-dev libz1 libz-dev make gawk protobuf-c-compiler uuid-dev liblz4-tool liblz4-dev libprotobuf-c1 libsqlite3-0 libuuid1 libz1 tzdata ncurses-dev tcl bc
