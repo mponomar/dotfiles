@@ -1,0 +1,4 @@
+cp ~/.ssh/id_rsa.pub key
+docker build -t aptcache:latest -f Dockerfile.cache .
+docker build --progress plain -t comdb2dev:latest .
+rm key

@@ -1,0 +1,2 @@
+#docker run -d -p 3142:3142 --name aptcache aptcache
+docker run -d --name comdb2dev --cap-add sys_ptrace -p 127.0.0.1:2222:22 comdb2dev:latest
