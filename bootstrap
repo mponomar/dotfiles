@@ -19,7 +19,7 @@ sudo groupadd docker
 sudo usermod -a -G docker $(id -u -n)
 sudo timedatectl set-local-rtc 1
 
-sudo apt install -y git build-essential python3 python3-dev golang clang clang-format cmake make ninja-build nodejs npm vim tmux vim valgrind cproto golang-golang-x-tools net-tools openssh-server docker.io docker-compose htop bear jq cmake-curses-gui ack exuberant-ctags apt-file sqlite3 ncdu wamerican
+sudo apt install -y git build-essential python3 python3-dev golang clang clang-format cmake make ninja-build nodejs npm vim tmux vim valgrind cproto golang-golang-x-tools net-tools openssh-server docker.io docker-compose htop bear jq cmake-curses-gui ack exuberant-ctags apt-file sqlite3 ncdu wamerican xsel fonts-firacode
 git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/
@@ -52,7 +52,7 @@ git remote add mark https://github.com/markhannum/comdb2
 git remote add joe https://github.com/mistachkin/comdb2
 git remote add james https://github.com/jmleddy/comdb2
 git remote add tim https://github.com/timmui/comdb2
-sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadline-dev libsqlite3-dev libssl-dev libunwind-dev libevent-dev libz1 libz-dev make gawk protobuf-c-compiler uuid-dev liblz4-tool liblz4-dev libprotobuf-c1 libsqlite3-0 libuuid1 libz1 tzdata ncurses-dev tcl bc
+sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadline-dev libsqlite3-dev libssl-dev libunwind-dev libevent-dev libz1 libz-dev make gawk protobuf-c-compiler uuid-dev lz4 liblz4-dev libprotobuf-c1 libsqlite3-0 libuuid1 libz1 tzdata ncurses-dev tcl bc
 ssh-keygen  -N '' -f ~/.ssh/id_rsa
 sudo apt autoremove -y
 sudo apt-file update

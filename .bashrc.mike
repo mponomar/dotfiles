@@ -25,12 +25,11 @@ complete -F _complete_tags vit
 alias vit='vi -t'
 alias cx='chmod +x'
 alias psef='ps -ef | grep'
+alias open='xdg-open'
 alias vi=nvim
 
-alias bn='sudo systemctl restart NetworkManager'
 export MANPATH=$(manpath 2>/dev/null):"$HOME/share/man"
 alias errors='grep --color=never 'define.*E' /usr/include/asm-generic/errno.h /usr/include/asm-generic/errno-base.h | sort -k3n,3n'
-alias m='time make -j4 >/dev/null && ctags -R'
 
 export CHROOT=${HOME}/chroot
 MOSH_ESCAPE_KEY=""
@@ -50,3 +49,13 @@ function lt {
 }
 
 export db=${HOME}/comdb2/src/build/db/comdb2
+
+function ghpass {
+    cat ~/secrets/github | xsel -b
+        (
+         (
+          sleep 10
+          cat </dev/null | xsel -b
+         ) &
+        )
+}
