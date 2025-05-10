@@ -56,3 +56,7 @@ sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadli
 ssh-keygen  -N '' -f ~/.ssh/id_rsa
 sudo apt autoremove -y
 sudo apt-file update
+
+mkdir -p ~/.config/nvim
+cp .nvimrc ~/.config/nvim/init.lua
+ln -s ~/.config/nvim/init.lua ~/.nvimrc

@@ -130,16 +130,9 @@ set rtp+=~/.vim/bundle/Vundle.vim
 call vundle#begin()
 Plugin 'VundleVim/Vundle.vim'
 
-Plugin 'Valloric/YouCompleteMe'
 Plugin 'MarcWeber/vim-addon-mw-utils'
 Plugin 'tomtom/tlib_vim'
-Plugin 'garbas/vim-snipmate'
 Plugin 'godlygeek/tabular'
 
 call vundle#end()
 filetype plugin indent on
-
-hi YcmErrorSection ctermfg=0 ctermbg=5
-hi YcmWarningSection ctermfg=0 ctermbg=5
-
-let g:ycm_always_populate_location_list=1

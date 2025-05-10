@@ -71,7 +71,7 @@ picture-options='zoom'
 secondary-color='#000000'
 
 [org/gnome/desktop/input-sources]
-xkb-options=['ctrl:nocaps']
+xkb-options=['caps:ctrl_modifier']
 
 [gnome/shell/extensions/dash-to-dock]
 dock-fixed=false

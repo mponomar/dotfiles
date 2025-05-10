@@ -25,10 +25,7 @@ complete -F _complete_tags vit
 alias vit='vi -t'
 alias cx='chmod +x'
 alias psef='ps -ef | grep'
-alias inst='sudo apt-get install'
-alias srch='apt-cache search'
-alias open='xdg-open'
-alias vb='VBoxManage'
+alias vi=nvim
 
 alias bn='sudo systemctl restart NetworkManager'
 export MANPATH=$(manpath 2>/dev/null):"$HOME/share/man"
