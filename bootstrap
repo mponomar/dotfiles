@@ -19,7 +19,7 @@ sudo groupadd docker
 sudo usermod -a -G docker $(id -u -n)
 sudo timedatectl set-local-rtc 1
 
-sudo apt install -y git build-essential python3 python3-dev golang clang clang-format cmake make ninja-build nodejs npm vim tmux vim valgrind cproto golang-golang-x-tools net-tools openssh-server docker.io docker-compose htop bear jq cmake-curses-gui ack exuberant-ctags apt-file sqlite3 ncdu wamerican xsel fonts-firacode
+sudo apt install -y git build-essential python3 python3-dev golang clang clang-format cmake make ninja-build nodejs npm vim tmux vim valgrind cproto golang-golang-x-tools net-tools openssh-server docker.io docker-compose htop bear jq cmake-curses-gui ack exuberant-ctags apt-file sqlite3 ncdu wamerican xsel fonts-firacode libelf-dev
 git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 vim -c 'VundleInstall' -c 'qa!'
 cd $HOME/.vim/bundle/YouCompleteMe/
@@ -60,3 +60,6 @@ sudo apt-file update
 mkdir -p ~/.config/nvim
 cp .nvimrc ~/.config/nvim/init.lua
 ln -s ~/.config/nvim/init.lua ~/.nvimrc
+
+sudo snap install --classic nushell 
+sudo snap install --classic nvim 
