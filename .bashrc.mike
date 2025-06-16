@@ -27,6 +27,7 @@ alias cx='chmod +x'
 alias psef='ps -ef | grep'
 alias open='xdg-open'
 alias vi=nvim
+alias c=cdb2cluster
 
 export MANPATH=$(manpath 2>/dev/null):"$HOME/share/man"
 alias errors='grep --color=never 'define.*E' /usr/include/asm-generic/errno.h /usr/include/asm-generic/errno-base.h | sort -k3n,3n'

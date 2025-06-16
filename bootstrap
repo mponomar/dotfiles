@@ -34,6 +34,12 @@ if [[ -n "$desktop" ]]; then
   dconf load / < gsettings
 fi
 
+mkdir -p ~/.config/nvim
+cp .nvimrc ~/.config/nvim/init.lua
+ln -s ~/.config/nvim/init.lua ~/.nvimrc
+mkdir -p ~/.local/bin
+ln -s ~/bin/cdb2cluster ~/.local/bin/cdb2cluster
+
 cd $HOME
 mkdir comdb2
 git clone https://github.com/mponomar/comdb2 comdb2/src
@@ -56,10 +62,6 @@ sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadli
 ssh-keygen  -N '' -f ~/.ssh/id_rsa
 sudo apt autoremove -y
 sudo apt-file update
-
-mkdir -p ~/.config/nvim
-cp .nvimrc ~/.config/nvim/init.lua
-ln -s ~/.config/nvim/init.lua ~/.nvimrc
 
 sudo snap install --classic nushell 
 sudo snap install --classic nvim 
