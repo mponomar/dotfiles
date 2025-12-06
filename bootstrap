@@ -26,6 +26,22 @@ cd $dir
 mkdir -p ${HOME}/bin
 cp bin/* ${HOME}/bin
 
+cd
+mkdir repos
+cd repos
+git clone https://github.com/neovim/neovim
+cd neovim
+make && sudo make install
+nvim -c ':Lazy install' -c 'qa!'
+cd
+
+sudo snap install bw
+
+mkdir secrets
+chmod 700 secrets
+bw get item "Github PAT" | jq -r .login.password > secrets/github
+chmod 600 secrets/github
+
 if [[ -n "$desktop" ]]; then
   sudo apt remove -y ubuntu-web-launchers
   sudo apt install meld fonts-hack-ttf chromium-browser qdirstat kcachegrind zeal
@@ -53,10 +69,3 @@ sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadli
 ssh-keygen  -N '' -f ~/.ssh/id_rsa
 sudo apt autoremove -y
 sudo apt-file update
-cd
-mkdir repos
-cd repos
-git clone https://github.com/neovim/neovim
-cd neovim
-make && sudo make install
-nvim -c ':Lazy install' -c 'qa!'
