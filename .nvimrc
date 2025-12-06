@@ -752,28 +752,7 @@ require('lazy').setup({
   end,
 },
 
-{
-  'ziglang/zig.vim',
-  ui = {
-    -- If you are using a Nerd Font: set icons to an empty table which will use the
-    -- default lazy.nvim defined Nerd Font icons, otherwise define a unicode icons table
-    icons = vim.g.have_nerd_font and {} or {
-      cmd = '⌘',
-      config = '🛠',
-      event = '📅',
-      ft = '📂',
-      init = '⚙',
-      keys = '🗝',
-      plugin = '🔌',
-      runtime = '💻',
-      require = '🌙',
-      source = '📄',
-      start = '🚀',
-      task = '📌',
-      lazy = '💤 ',
-    },
-  },
-  },
+,
 'sakhnik/nvim-gdb',
 {
   'folke/flash.nvim',
@@ -788,30 +767,6 @@ require('lazy').setup({
 })
 
 local lspconfig = require('lspconfig')
-lspconfig.zls.setup {
-  -- Server-specific settings. See `:help lspconfig-setup`
-
-  -- omit the following line if `zls` is in your PATH
-  cmd = { '/opt/homebrew/bin/zls' },
-  -- There are two ways to set config options:
-  --   - edit your `zls.json` that applies to any editor that uses ZLS
-  --   - set in-editor config options with the `settings` field below.
-  --
-  -- Further information on how to configure ZLS:
-  -- https://zigtools.org/zls/configure/
-  settings = {
-    zls = {
-      -- Whether to enable build-on-save diagnostics
-      --
-      -- Further information about build-on save:
-      -- https://zigtools.org/zls/guides/build-on-save/
-      -- enable_build_on_save = true,
-
-      -- omit the following line if `zig` is in your PATH
-      zig_exe_path = '/opt/homebrew/bin/zls'
-    }
-  }
-}
 
 
 require("telescope").load_extension("emoji")
