@@ -1,0 +1,1178 @@
+#!/usr/bin/env python3
+"""cctl -- inspect, time, and manage Claude Code sessions.
+
+Claude Code appends one JSONL entry per message to
+~/.claude/projects/<slug>/<session-id>.jsonl, each stamped with the wall-clock
+time it was written. Diffing consecutive stamps recovers where a session's time
+actually went: model time (prompt or tool result in -> assistant message out)
+versus tool time (tool_use issued -> tool_result back).
+
+"""
+
+import argparse
+import json
+import os
+import re
+import html
+import shutil
+import signal
+import textwrap
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+PROJECTS = os.path.expanduser("~/.claude/projects")
+CACHE = os.path.expanduser("~/.cache/cctl/summaries.json")
+IDLE_DEFAULT = 300.0
+
+
+# ---------------------------------------------------------------- transcripts
+
+def slug_for_cwd(cwd=None):
+    """Claude Code's project slug: the absolute path with / turned into -."""
+    return (cwd or os.getcwd()).replace("/", "-")
+
+
+def as_slug(value):
+    """Accept either a project slug or a plain directory path."""
+    if not value:
+        return None
+    if "/" in value:
+        return slug_for_cwd(os.path.abspath(os.path.expanduser(value)))
+    return value
+
+
+def project_dir(slug):
+    return os.path.join(PROJECTS, slug)
+
+
+def slug_of(path):
+    """Which project a transcript belongs to -- its parent directory's name."""
+    return os.path.basename(os.path.dirname(path))
+
+
+def sessions_in(slug):
+    """Transcripts for one project, newest first; empty rather than fatal."""
+    d = project_dir(slug)
+    if not os.path.isdir(d):
+        return []
+    files = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".jsonl")]
+    return sorted(files, key=os.path.getmtime, reverse=True)
+
+
+def all_projects():
+    if not os.path.isdir(PROJECTS):
+        return []
+    return sorted(s for s in os.listdir(PROJECTS)
+                  if os.path.isdir(project_dir(s)))
+
+
+def sessions_for(slug):
+    d = project_dir(slug)
+    if not os.path.isdir(d):
+        die(f"no transcripts for project {slug!r}\n"
+            f"       looked in {d}\n"
+            f"       try: cctl projects")
+    files = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".jsonl")]
+    if not files:
+        die(f"no sessions recorded for {slug!r}")
+    return sorted(files, key=os.path.getmtime, reverse=True)
+
+
+def sid_of(path):
+    return os.path.basename(path)[:-6]
+
+
+def ts(raw):
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def entries(path):
+    for line in open(path, encoding="utf-8", errors="replace"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            yield json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+
+def head_scan(path, scan_lines=500):
+    """Title and working directory, read from the first entries only.
+
+    `ai-title` rows are written a few entries in and rewritten unchanged
+    thereafter, so the first hit is the whole story -- no need to read a
+    multi-megabyte transcript to the end. Sessions too short to have earned a
+    title fall back to their opening prompt.
+    """
+    title = prompt = cwd = ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i > scan_lines or (title and cwd):
+                    break
+                if not ('"aiTitle"' in line or '"lastPrompt"' in line
+                        or '"cwd"' in line):
+                    continue
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                title = title or d.get("aiTitle") or ""
+                cwd = cwd or d.get("cwd") or ""
+                if not prompt and d.get("lastPrompt"):
+                    prompt = " ".join(str(d["lastPrompt"]).split())
+    except OSError:
+        pass
+    return {"title": title or prompt, "titled": bool(title), "cwd": cwd}
+
+
+# ------------------------------------------------------------------- timings
+
+def blocks(entry, kind):
+    msg = entry.get("message")
+    if not isinstance(msg, dict):
+        return []
+    content = msg.get("content")
+    if not isinstance(content, list):
+        return []
+    return [b for b in content if isinstance(b, dict) and b.get("type") == kind]
+
+
+def text_of(entry):
+    msg = entry.get("message")
+    if not isinstance(msg, dict):
+        return ""
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return " ".join(b.get("text", "") for b in content
+                    if isinstance(b, dict) and b.get("type") == "text")
+
+
+def detail_for(params):
+    """A short, human-recognizable label for which call this was."""
+    if not isinstance(params, dict):
+        return ""
+    for key in ("command", "file_path", "pattern", "path", "url", "prompt",
+                "query", "description"):
+        if isinstance(params.get(key), str):
+            return " ".join(params[key].split())
+    return ""
+
+
+def result_text(block, entry):
+    """The text a tool handed back, wherever this entry happens to keep it."""
+    c = block.get("content")
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return "\n".join(x.get("text", "") for x in c
+                         if isinstance(x, dict) and x.get("type") == "text")
+    tur = entry.get("toolUseResult")
+    if isinstance(tur, str):
+        return tur
+    if isinstance(tur, dict):
+        return "\n".join(str(tur[k]) for k in ("stdout", "stderr") if tur.get(k))
+    return ""
+
+
+class Walker:
+    """The timing state machine, fed one transcript entry at a time.
+
+    `dump -f` needs the same attribution as a whole-file parse, but has to make
+    it incrementally as lines land, so the walk lives here rather than inside a
+    loop over a finished file. feed() returns the steps that entry completed --
+    usually one, none for bookkeeping rows, several for parallel tool results.
+    """
+
+    def __init__(self, idle_threshold=IDLE_DEFAULT, keep=False):
+        self.idle_threshold = idle_threshold
+        self.keep = keep
+        self.pending = {}       # tool_use_id -> (issued_at, name, detail, input)
+        self.clock = None       # when the current interval started
+        self.turn = 0
+        self.after_interrupt = False
+
+    def feed(self, e):
+        etype = e.get("type")
+        when = ts(e.get("timestamp"))
+        if when is None:
+            return []
+        # Attachments are injected context; queue/latch/title rows are
+        # bookkeeping. Neither is work, so neither may advance the clock.
+        if etype not in ("user", "assistant"):
+            return []
+
+        keep = self.keep
+        results = blocks(e, "tool_result")
+
+        if etype == "user" and not results:
+            self.turn += 1
+            body = text_of(e)
+            if body.startswith("[Request interrupted"):
+                self.after_interrupt = True
+            self.clock = when
+            self.pending.clear()
+            return [{
+                "kind": "prompt", "turn": self.turn, "seconds": None,
+                "name": "(user prompt)", "detail": clip(body, 300),
+                "at": when.isoformat(), "sidechain": bool(e.get("isSidechain")),
+                **({"text": body} if keep else {}),
+            }]
+
+        if etype == "user":
+            out, latest = [], self.clock
+            for b in results:
+                issued, name, detail, issued_input = self.pending.pop(
+                    b.get("tool_use_id"), (self.clock, "(unknown tool)", "", None))
+                base = issued or self.clock or when
+                out.append({
+                    "kind": "tool", "turn": self.turn,
+                    "seconds": (when - base).total_seconds(),
+                    "name": name, "detail": detail,
+                    "at": when.isoformat(), "sidechain": bool(e.get("isSidechain")),
+                    "error": bool(b.get("is_error")),
+                    **({"input": issued_input, "text": result_text(b, e)}
+                       if keep else {}),
+                })
+                latest = when if latest is None else max(latest, when)
+            self.clock = latest
+            return out
+
+        # Assistant message. Everything since the clock was model time -- unless
+        # the session was simply sitting idle. An ESC interrupt or a --resume
+        # days later leaves a gap that is nobody's compute time.
+        msg = e.get("message") or {}
+        usage = msg.get("usage") or {}
+        calls = blocks(e, "tool_use")
+        gap = (when - self.clock).total_seconds() if self.clock else None
+        idle = gap is not None and (gap > self.idle_threshold
+                                    or self.after_interrupt)
+        self.after_interrupt = False
+        step = {
+            "kind": "idle" if idle else "model", "turn": self.turn,
+            "seconds": gap, "name": "(model)",
+            "detail": clip(text_of(e), 200) or (
+                "-> " + ", ".join(c.get("name", "?") for c in calls) if calls else ""),
+            "at": when.isoformat(), "sidechain": bool(e.get("isSidechain")),
+            "model": msg.get("model"),
+            "output_tokens": usage.get("output_tokens") or 0,
+            "thinking_tokens": (usage.get("output_tokens_details")
+                                or {}).get("thinking_tokens") or 0,
+            **({"msg_id": msg.get("id"), "text": text_of(e),
+                "thinking": "\n".join(b.get("thinking", "")
+                                      for b in blocks(e, "thinking")),
+                "calls": [{"name": c.get("name", "?"), "input": c.get("input")}
+                          for c in calls]} if keep else {}),
+        }
+        self.clock = when
+        # Parallel calls all start from this same assistant timestamp.
+        for c in calls:
+            self.pending[c["id"]] = (when, c.get("name", "?"),
+                                     clip(detail_for(c.get("input")), 300),
+                                     c.get("input"))
+        return [step]
+
+
+class LineReader:
+    """Complete lines from an open file, remembering a partial tail.
+
+    A transcript being appended to right now can be read mid-line; holding the
+    fragment until its newline arrives is what keeps -f from dropping the entry
+    that was being written when we caught up.
+    """
+
+    def __init__(self, fh):
+        self.fh = fh
+        self.buf = ""
+
+    def drain(self):
+        while True:
+            chunk = self.fh.readline()
+            if not chunk:
+                return
+            self.buf += chunk
+            if self.buf.endswith("\n"):
+                line, self.buf = self.buf.strip(), ""
+                if line:
+                    yield line
+
+
+def parse(path, idle_threshold=IDLE_DEFAULT, keep=False):
+    """Walk a whole transcript, attributing each interval to a step.
+
+    With keep=True each step also carries its full content -- prompt text,
+    thinking, tool inputs and tool output -- for `dump` to render. The walk is
+    identical either way, so the two views can never disagree.
+    """
+    walker = Walker(idle_threshold, keep)
+    steps = []
+    for e in entries(path):
+        steps.extend(walker.feed(e))
+    return steps
+
+
+def totals(steps):
+    """Roll a step list up into the numbers both `list` and `show` report."""
+    def secs(kind):
+        return [s["seconds"] for s in steps
+                if s["kind"] == kind and s["seconds"] is not None]
+
+    model, tool, idle = secs("model"), secs("tool"), secs("idle")
+    stamps = [ts(s["at"]) for s in steps]
+    stamps = [t for t in stamps if t]
+    span = (stamps[-1] - stamps[0]).total_seconds() if len(stamps) > 1 else 0.0
+    by_tool = {}
+    for s in steps:
+        if s["kind"] == "tool" and s["seconds"] is not None:
+            by_tool.setdefault(s["name"], []).append(s["seconds"])
+    return {
+        "steps": len(steps),
+        "turns": sum(1 for s in steps if s["kind"] == "prompt"),
+        "model": sum(model), "tool": sum(tool), "idle": sum(idle),
+        "calls": len(tool),
+        "thinking": sum(s["seconds"] for s in steps
+                        if s["kind"] == "model" and s["seconds"] is not None
+                        and s.get("thinking_tokens")),
+        "span": span,
+        "by_tool": {k: {"n": len(v), "total": sum(v), "max": max(v)}
+                    for k, v in by_tool.items()},
+        "start": stamps[0].isoformat() if stamps else None,
+    }
+
+
+# ---------------------------------------------------------------------- cache
+
+def load_cache():
+    try:
+        with open(CACHE) as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_cache(cache):
+    try:
+        os.makedirs(os.path.dirname(CACHE), exist_ok=True)
+        tmp = CACHE + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(cache, fh)
+        os.replace(tmp, CACHE)
+    except OSError:
+        pass
+
+
+def summarize(path, cache, refresh=False):
+    """Totals for one session, memoized on (size, mtime).
+
+    Transcripts are append-only, so a session that has not grown since it was
+    last read cannot have different numbers. Only live sessions get re-parsed.
+    """
+    st = os.stat(path)
+    key = sid_of(path)
+    hit = cache.get(key)
+    if (not refresh and hit and hit.get("size") == st.st_size
+            and hit.get("mtime") == int(st.st_mtime)):
+        return hit["totals"], hit["head"]
+
+    head = head_scan(path)
+    tot = totals(parse(path))
+    cache[key] = {"size": st.st_size, "mtime": int(st.st_mtime),
+                  "totals": tot, "head": head}
+    return tot, head
+
+
+# ------------------------------------------------------------------ formatting
+
+def fmt(sec):
+    if sec is None:
+        return "     -"
+    if abs(sec) < 0.05:
+        sec = 0.0
+    if sec < 60:
+        return f"{sec:6.1f}s"
+    if sec < 3600:
+        return f"{int(sec // 60):3d}m{int(sec % 60):02d}s"
+    return f"{int(sec // 3600):3d}h{int(sec % 3600) // 60:02d}m"
+
+
+def clip(s, n):
+    s = s or ""
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def clip_left(s, n):
+    s = s or ""
+    return s if len(s) <= n else "…" + s[-(n - 1):]
+
+
+def wrap(line, room):
+    """Fold one logical line to `room` columns, losing nothing.
+
+    The line's own leading whitespace is lifted out and reapplied as an indent,
+    so code and diffs keep their shape without the space at each break point
+    reappearing at the head of the next line. Continuations are pushed two
+    further columns to stay distinguishable from a real newline, and
+    break_long_words lets a base64 blob or a very long path fold rather than
+    run off the screen.
+    """
+    if not line.strip():
+        return [""]
+    lead = line[: len(line) - len(line.lstrip())]
+    if len(lead) > max(0, room - 20):        # pathological indentation
+        lead = ""
+    return textwrap.wrap(line.strip(), max(8, room),
+                         break_long_words=True, break_on_hyphens=False,
+                         initial_indent=lead, subsequent_indent=lead + "  ") or [""]
+
+
+def cols():
+    return shutil.get_terminal_size((120, 24)).columns
+
+
+def die(msg):
+    sys.exit(f"cctl: {msg}")
+
+
+def local(iso):
+    t = ts(iso)
+    return t.astimezone() if t else None
+
+
+# ------------------------------------------------------------------ selection
+
+def resolve(slug, needle, allow_many=False):
+    """Match a session by id, id prefix, or title substring."""
+    paths = sessions_for(slug)
+    if not needle:
+        return paths[:1]
+
+    exact = [p for p in paths if sid_of(p) == needle]
+    if exact:
+        return exact
+
+    low = needle.lower()
+    cache = load_cache()
+    prefix = [p for p in paths if sid_of(p).startswith(low)]
+    title = [p for p in paths
+             if low in (summarize(p, cache)[1]["title"] or "").lower()]
+    save_cache(cache)
+
+    hits = prefix or title
+    if not hits:
+        die(f"no session matching {needle!r} in {slug}\n"
+            f"       try: cctl list")
+    if len(hits) > 1 and not allow_many:
+        lines = "\n".join(
+            f"       {sid_of(p)}  {clip(summarize(p, cache)[1]['title'], 50)}"
+            for p in hits[:10])
+        die(f"{needle!r} matches {len(hits)} sessions:\n{lines}\n"
+            f"       be more specific")
+    return hits
+
+
+# --------------------------------------------------------------------- verbs
+
+def cmd_list(args):
+    if args.all:
+        paths = [p for slug in all_projects() for p in sessions_in(slug)]
+        if not paths:
+            die(f"no transcripts anywhere under {PROJECTS}")
+    else:
+        paths = sessions_for(as_slug(args.project) or slug_for_cwd())
+
+    cache = load_cache()
+    rows = []
+    for p in paths:
+        tot, head = summarize(p, cache, refresh=args.refresh)
+        rows.append((p, tot, head))
+    save_cache(cache)
+
+    if args.sort == "time":
+        rows.sort(key=lambda r: -(r[1]["model"] + r[1]["tool"]))
+    elif args.sort == "size":
+        rows.sort(key=lambda r: -os.path.getsize(r[0]))
+    else:
+        # sessions_for() orders by mtime, but the column shows when a session
+        # *started*; sort on what is actually printed so the two agree.
+        rows.sort(key=lambda r: ts(r[1]["start"]) or datetime.fromtimestamp(
+            os.path.getmtime(r[0]), timezone.utc), reverse=True)
+
+    # Count the projects before -n trims the rows, so the footer describes what
+    # was searched rather than what happened to fit.
+    n_projects = len({slug_of(p) for p, _, _ in rows})
+
+    # Limit after sorting: -n 5 --sort time means the five slowest, not five
+    # arbitrary sessions put in order.
+    if args.limit:
+        rows = rows[: args.limit]
+
+    if args.json:
+        json.dump([{"session": sid_of(p), "project": slug_of(p),
+                    "title": h["title"], **t}
+                   for p, t, h in rows], sys.stdout, indent=2)
+        print()
+        return
+
+    # 16 date + 2 + 12 session + 1 + 5 turns + 3*8 times + 2 = 62 fixed columns,
+    # plus the project column when there is one; the title gets the rest.
+    proj = min(26, max((len(slug_of(p)) for p, _, _ in rows), default=0) + 2) \
+        if args.all else 0
+    room = max(20, cols() - 62 - proj)
+    head_proj = f"{'project':<{proj}}" if proj else ""
+    print(f"{'when':<16}  {'session':<12} {'turns':>5} {'model':>7} "
+          f"{'tool':>7} {'busy':>7}  {head_proj}title")
+    print("-" * cols())
+    for p, tot, head in rows:
+        when = local(tot["start"]) or datetime.fromtimestamp(
+            os.path.getmtime(p), timezone.utc).astimezone()
+        busy = tot["model"] + tot["tool"]
+        title = head["title"] or "(untitled)"
+        if not head["titled"] and head["title"]:
+            title = f"~ {title}"          # falling back to the opening prompt
+        # Slugs share a long left-hand prefix (-home-mike-...), so trim from the
+        # left: the tail is what tells two of them apart.
+        cell = f"{clip_left(slug_of(p), proj - 2):<{proj}}" if proj else ""
+        print(f"{when:%Y-%m-%d %H:%M}  {sid_of(p)[:8]:<12} {tot['turns']:>5} "
+              f"{fmt(tot['model'])} {fmt(tot['tool'])} {fmt(busy)}  "
+              f"{cell}{clip(title, room)}")
+
+    agg_model = sum(t["model"] for _, t, _ in rows)
+    agg_tool = sum(t["tool"] for _, t, _ in rows)
+    print("-" * cols())
+    scope = ""
+    if args.all:
+        scope = (f" across {n_projects} "
+                 f"project{'s' if n_projects != 1 else ''}")
+    print(f"{len(rows)} sessions{scope}   model {fmt(agg_model).strip()}   "
+          f"tool {fmt(agg_tool).strip()}   "
+          f"busy {fmt(agg_model + agg_tool).strip()}")
+
+
+def cmd_show(args):
+    slug = as_slug(args.project) or slug_for_cwd()
+    path = resolve(slug, args.session)[0]
+    steps = parse(path, args.idle_threshold)
+    if not steps:
+        die(f"no timed steps in {path}")
+
+    if args.json:
+        json.dump(steps, sys.stdout, indent=2)
+        print()
+        return
+
+    head = head_scan(path)
+    tot = totals(steps)
+    print(f"session: {sid_of(path)}")
+    if head["title"]:
+        print(f"  title: {head['title']}")
+    if head["cwd"]:
+        print(f"    cwd: {head['cwd']}")
+    print()
+
+    if args.steps or args.top:
+        width = max(20, cols() - 46)
+        shown = [s for s in steps if s["seconds"] is not None] if args.top else steps
+        if args.top:
+            shown = sorted(shown, key=lambda s: -s["seconds"])[: args.top]
+        print(f"{'#':>4}  {'turn':>4}  {'time':>7}  {'step':<22}  detail")
+        print("-" * min(cols(), 44 + width))
+        for i, s in enumerate(shown, 1):
+            if s["seconds"] is not None and s["seconds"] < args.min:
+                continue
+            label = "(paused)" if s["kind"] == "idle" else s["name"]
+            if s.get("thinking_tokens"):
+                label += " *"
+            if s.get("error"):
+                label += " !"
+            print(f"{i:>4}  {s['turn']:>4}  {fmt(s['seconds'])}  "
+                  f"{clip(label, 22):<22}  {clip(s['detail'], width)}")
+        print()
+
+    busy = tot["model"] + tot["tool"]
+    print(f"{'step':<24} {'calls':>6} {'total':>9} {'mean':>8} {'max':>8}  share")
+    print("-" * 72)
+
+    def row(name, n, total, mx):
+        share = (total / busy * 100) if busy else 0
+        print(f"{clip(name, 24):<24} {n:>6} {fmt(total):>9} "
+              f"{fmt(total / n):>8} {fmt(mx):>8}  {share:5.1f}%")
+
+    model_steps = [s["seconds"] for s in steps
+                   if s["kind"] == "model" and s["seconds"] is not None]
+    if model_steps:
+        row("(model)", len(model_steps), sum(model_steps), max(model_steps))
+    for name, d in sorted(tot["by_tool"].items(), key=lambda kv: -kv[1]["total"]):
+        row(name, d["n"], d["total"], d["max"])
+
+    print("-" * 72)
+    print(f"{'model time':<24} {fmt(tot['model']):>25}  "
+          f"{tot['model'] / busy * 100 if busy else 0:5.1f}%")
+    print(f"{'tool time':<24} {fmt(tot['tool']):>25}  "
+          f"{tot['tool'] / busy * 100 if busy else 0:5.1f}%")
+    print(f"{'busy total':<24} {fmt(busy):>25}")
+    print(f"{'session span':<24} {fmt(tot['span']):>25}   "
+          f"({fmt(tot['span'] - busy - tot['idle']).strip()} waiting on you)")
+    if tot["idle"]:
+        print(f"{'  paused / interrupted':<24} {fmt(tot['idle']):>25}   "
+              f"(excluded above)")
+    if tot["thinking"]:
+        print(f"{'  model time spent thinking':<24} {fmt(tot['thinking']):>23}")
+
+
+def cmd_dump(args):
+    slug = as_slug(args.project) or slug_for_cwd()
+    path = resolve(slug, args.session)[0]
+    head = head_scan(path)
+    width = cols()
+    show_calls = args.tools != "none"
+    show_output = args.tools == "full"
+    state = {"start": None}
+
+    def rel(at):
+        t = ts(at)
+        if state["start"] is None:      # a followed session may have no step yet
+            state["start"] = t
+        d = (t - state["start"]).total_seconds()
+        return f"{int(d // 3600):d}:{int(d % 3600) // 60:02d}:{int(d % 60):02d}"
+
+    # 8 for the relative clock + 2 + 7 for the duration + 2 = one gutter, so
+    # every label and every line of content lines up in a single column.
+    gutter = " " * 19
+
+    def body(text, marker="  "):
+        """Print content in the gutter, wrapped to the terminal."""
+        if not text:
+            return
+        lines = text.rstrip().expandtabs(4).splitlines()
+        shown = lines[: args.lines] if args.lines else lines
+        room = max(20, width - 19 - len(marker))
+        for line in shown:
+            for piece in wrap(line, room):
+                print(f"{gutter}{marker}{piece}")
+        if len(lines) > len(shown):
+            n = len(lines) - len(shown)
+            print(f"{gutter}{marker}… {n} more line{'s' if n != 1 else ''} "
+                  f"(drop -l to see them)")
+
+    # One assistant message arrives as several entries (thinking, then text,
+    # then the tool call), each with its own timestamp but one shared usage
+    # record. Report its token cost against the first entry only.
+    seen_msgs = set()
+
+    def emit(s):
+        if args.turn and s["turn"] != args.turn:
+            return
+        stamp = f"{rel(s['at']):>8}  {fmt(s['seconds'])}"
+
+        if s["kind"] == "prompt":
+            print(f"\n{'=' * width}")
+            print(f"{stamp}  turn {s['turn']} — you")
+            print("=" * width)
+            body(s.get("text", ""))
+            return
+
+        if s["kind"] == "idle":
+            print(f"{stamp}  ---- paused ----")
+            return
+
+        if s["kind"] == "tool":
+            if not show_calls:
+                return
+            flag = " [error]" if s.get("error") else ""
+            print(f"{stamp}  <- {s['name']}{flag}")
+            if show_output:
+                body(s.get("text", ""), "| ")
+            return
+
+        # model
+        if not show_calls and not (s.get("text") or "").strip() and not (
+                s.get("thinking") and not args.no_thinking):
+            return        # a step that only issued a call has nothing to say
+        first = s.get("msg_id") not in seen_msgs
+        seen_msgs.add(s.get("msg_id"))
+        note = (f"  [{s['thinking_tokens']} thinking tok]"
+                if s.get("thinking_tokens") and first else "")
+        print(f"{stamp}  claude{note}")
+        if s.get("thinking") and not args.no_thinking:
+            body(s["thinking"], "~ ")
+        body(s.get("text", ""))
+        for c in s.get("calls", []):
+            if not show_calls:
+                return
+            lead = f"-> {c['name']}  "
+            room = max(20, width - 19 - len(lead))
+            for i, piece in enumerate(wrap(detail_for(c["input"]), room)):
+                print(f"{gutter}{lead if i == 0 else ' ' * len(lead)}{piece}")
+
+    walker = Walker(args.idle_threshold, keep=True)
+    fh = open(path, encoding="utf-8", errors="replace")
+    reader = LineReader(fh)
+    steps = []
+    for line in reader.drain():
+        try:
+            steps.extend(walker.feed(json.loads(line)))
+        except json.JSONDecodeError:
+            continue
+
+    if not steps and not args.follow:
+        die(f"no timed steps in {path}")
+
+    print(f"session: {sid_of(path)}")
+    if head["title"]:
+        print(f"  title: {head['title']}")
+    if head["cwd"]:
+        print(f"    cwd: {head['cwd']}")
+    if steps:
+        state["start"] = ts(steps[0]["at"])
+        print(f"  start: {local(steps[0]['at']):%Y-%m-%d %H:%M:%S}")
+    print()
+
+    for s in steps:
+        emit(s)
+
+    if not args.follow:
+        fh.close()
+        tot = totals(steps)
+        busy = tot["model"] + tot["tool"]
+        print(f"\n{'-' * width}")
+        print(f"{tot['turns']} turn{'s' if tot['turns'] != 1 else ''}, "
+              f"{tot['steps']} steps, "
+              f"{fmt(tot['span']).strip()} elapsed — "
+              f"model {fmt(tot['model']).strip()}, "
+              f"tool {fmt(tot['tool']).strip()}, busy {fmt(busy).strip()}")
+        return
+
+    # Redirected stdout is block-buffered, so everything caught up so far would
+    # sit in the buffer until the session happened to produce enough to fill it.
+    sys.stdout.flush()
+    print(f"cctl: following {sid_of(path)} — Ctrl-C to stop", file=sys.stderr)
+    try:
+        while True:
+            for line in reader.drain():
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                for s in walker.feed(entry):
+                    emit(s)
+                    sys.stdout.flush()
+            # A transcript only grows; a shorter file is a different one, so
+            # start over rather than reading from a stale offset.
+            if os.path.getsize(path) < fh.tell():
+                fh.seek(0)
+                reader.buf = ""
+            time.sleep(args.interval)
+    finally:
+        fh.close()
+
+
+def fence(text):
+    """A code fence long enough to survive whatever backticks are inside."""
+    longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
+    return "`" * max(3, longest + 1)
+
+
+def cmd_export(args):
+    slug = as_slug(args.project) or slug_for_cwd()
+    path = resolve(slug, args.session)[0]
+    steps = parse(path, args.idle_threshold, keep=True)
+    if not steps:
+        die(f"no timed steps in {path}")
+
+    head = head_scan(path)
+    tot = totals(steps)
+    start = ts(steps[0]["at"])
+    out = []
+    # A <details> block exists to fold bulky output away, so asking for one is
+    # asking for the output.
+    level = "full" if args.collapse else args.tools
+    show_calls = level != "none"
+    show_output = level == "full"
+
+    def rel(at):
+        d = (ts(at) - start).total_seconds()
+        return f"T+{int(d // 3600):d}:{int(d % 3600) // 60:02d}:{int(d % 60):02d}"
+
+    def stamp(s):
+        if args.no_times:
+            return ""
+        bits = [rel(s["at"])]
+        if s["seconds"] is not None:
+            bits.append(fmt(s["seconds"]).strip())
+        return f" <sub>{' · '.join(bits)}</sub>"
+
+    def block(text, lang=""):
+        if not (text or "").strip():
+            return
+        f = fence(text)
+        out.append(f"{f}{lang}\n{text.rstrip()}\n{f}\n")
+
+    out.append(f"# {head['title'] or 'Claude Code session'}\n")
+    meta = [f"`{sid_of(path)}`"]
+    if head["cwd"]:
+        meta.append(f"`{head['cwd']}`")
+    meta.append(f"{local(steps[0]['at']):%Y-%m-%d %H:%M}")
+    meta.append(f"{tot['turns']} turn{'s' if tot['turns'] != 1 else ''}")
+    meta.append(f"busy {fmt(tot['model'] + tot['tool']).strip()} "
+                f"(model {fmt(tot['model']).strip()}, "
+                f"tool {fmt(tot['tool']).strip()})")
+    out.append(" · ".join(meta) + "\n")
+
+    for s in steps:
+        if s["kind"] == "prompt":
+            out.append(f"\n## Turn {s['turn']} — user{stamp(s)}\n")
+            block(s.get("text", ""))
+            continue
+        if s["kind"] == "idle":
+            if not args.no_times:
+                out.append(f"*— paused {fmt(s['seconds']).strip()} —*\n")
+            continue
+        if s["kind"] == "tool":
+            if not show_calls:
+                continue
+            label = f"**{s['name']}**"
+            if s.get("error"):
+                label += " *(error)*"
+            cmd = detail_for(s.get("input"))
+            body = s.get("text", "")
+            if args.collapse:
+                # Markdown does not render inside raw HTML, so the summary line
+                # has to be tagged rather than starred.
+                out.append(f"<details><summary><b>{s['name']}</b>"
+                           f"{' (error)' if s.get('error') else ''} — "
+                           f"<code>{html.escape(clip(cmd, 90))}</code>"
+                           f"{stamp(s)}</summary>\n")
+            else:
+                out.append(f"{label}{stamp(s)}\n")
+            block(cmd, "console")
+            if show_output:
+                block(body)
+            if args.collapse:
+                out.append("</details>\n")
+            continue
+
+        # model
+        if s.get("thinking") and args.thinking:
+            out.append(f"> *thinking*{stamp(s)}\n>\n")
+            out.extend(f"> {line}\n" for line in s["thinking"].splitlines())
+            out.append("\n")
+        if (s.get("text") or "").strip():
+            out.append(f"### Claude{stamp(s)}\n")
+            out.append(s["text"].rstrip() + "\n")
+    text = "\n".join(out)
+    if args.output and args.output != "-":
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        print(f"wrote {args.output} ({len(text) / 1024:.0f}K, {tot['turns']} "
+              f"turn{'s' if tot['turns'] != 1 else ''})", file=sys.stderr)
+    else:
+        sys.stdout.write(text)
+
+
+def cmd_del(args):
+    slug = as_slug(args.project) or slug_for_cwd()
+    targets = []
+    for needle in args.session:
+        for p in resolve(slug, needle, allow_many=args.match_many):
+            if p not in targets:
+                targets.append(p)
+
+    cache = load_cache()
+    print("These transcripts will be deleted permanently:\n")
+    total = 0
+    for p in targets:
+        _, head = summarize(p, cache)
+        size = os.path.getsize(p)
+        extra = os.path.join(os.path.dirname(p), sid_of(p))
+        total += size
+        print(f"  {sid_of(p)}  {size / 1024:8.0f}K  "
+              f"{clip(head['title'] or '(untitled)', 48)}")
+        if os.path.isdir(extra):
+            sub = sum(os.path.getsize(os.path.join(r, f))
+                      for r, _, fs in os.walk(extra) for f in fs)
+            total += sub
+            print(f"  {'':36}  + subagent/workflow data ({sub / 1024:.0f}K)")
+    print(f"\n{len(targets)} session(s), {total / 1024 / 1024:.1f}M. "
+          f"This cannot be undone.")
+
+    if not args.yes:
+        if not sys.stdin.isatty():
+            die("refusing to delete without a terminal to confirm at; pass --yes")
+        try:
+            if input("Type 'delete' to confirm: ").strip() != "delete":
+                sys.exit("aborted")
+        except (EOFError, KeyboardInterrupt):
+            sys.exit("\naborted")
+
+    for p in targets:
+        extra = os.path.join(os.path.dirname(p), sid_of(p))
+        if os.path.isdir(extra):
+            shutil.rmtree(extra, ignore_errors=True)
+        os.remove(p)
+        cache.pop(sid_of(p), None)
+        print(f"deleted {sid_of(p)}")
+    save_cache(cache)
+
+
+def cmd_projects(args):
+    if not os.path.isdir(PROJECTS):
+        die(f"no project directory at {PROJECTS}")
+    here = slug_for_cwd()
+    rows = []
+    for slug in os.listdir(PROJECTS):
+        d = project_dir(slug)
+        if not os.path.isdir(d):
+            continue
+        files = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".jsonl")]
+        if not files:
+            continue
+        newest = max(files, key=os.path.getmtime)
+        size = sum(os.path.getsize(f) for f in files)
+        # The slug is a lossy path encoding -- real directory names contain
+        # dashes too. The transcript records the true cwd, so read it back.
+        rows.append((slug, head_scan(newest)["cwd"] or slug.replace("-", "/"),
+                     len(files), size, os.path.getmtime(newest)))
+
+    rows.sort(key=lambda r: -r[4])
+    if args.json:
+        json.dump([{"slug": s, "cwd": c, "sessions": n, "bytes": b}
+                   for s, c, n, b, _ in rows], sys.stdout, indent=2)
+        print()
+        return
+
+    # cap the column so one long worktree slug cannot shove every path
+    # off the screen; an over-long slug just displaces its own row's path
+    wide = min(44, max(len(r[0]) for r in rows) + 2)
+    print(f"{'last used':<16} {'sessions':>8} {'size':>7}  {'slug':<{wide}} path")
+    print("-" * min(cols(), 120))
+    for slug, cwd, n, size, mtime in rows:
+        when = datetime.fromtimestamp(mtime, timezone.utc).astimezone()
+        mark = "*" if slug == here else " "
+        print(f"{when:%Y-%m-%d %H:%M} {n:>8} {size / 1048576:6.0f}M {mark} "
+              f"{slug:<{wide}} {cwd}")
+    print("-" * min(cols(), 100))
+    print(f"{len(rows)} projects, {sum(r[3] for r in rows) / 1048576:.0f}M total"
+          + ("   (* = current directory)" if any(r[0] == here for r in rows) else ""))
+
+
+def cmd_resume(args):
+    claude = shutil.which("claude")
+    if not claude:
+        die("`claude` is not on PATH")
+    if not args.session:
+        os.execv(claude, [claude, "--resume"])     # interactive picker
+    slug = as_slug(args.project) or slug_for_cwd()
+    path = resolve(slug, args.session)[0]
+    head = head_scan(path)
+    target = head["cwd"]
+    if target and os.path.isdir(target) and target != os.getcwd():
+        print(f"cctl: resuming from {target}", file=sys.stderr)
+        os.chdir(target)
+    print(f"cctl: {sid_of(path)}  {head['title']}", file=sys.stderr)
+    os.execv(claude, [claude, "--resume", sid_of(path)])
+
+
+# ----------------------------------------------------------------------- main
+
+class HelpFormat(argparse.HelpFormatter):
+    """Show a default only where knowing it changes what you would type.
+
+    ArgumentDefaultsHelpFormatter appends "(default: None)" to every optional
+    argument and "(default: False)" to every flag, which is noise on all but a
+    handful of them.
+    """
+
+    def _get_help_string(self, action):
+        text = action.help or ""
+        if (action.default not in (None, False, True, argparse.SUPPRESS)
+                and "%(default)" not in text):
+            text += "  (default: %(default)s)"
+        return text
+
+
+def fixup(argv):
+    """Let `-p -home-mike-mtg` work.
+
+    Project slugs are paths with the slashes swapped for dashes, so every one
+    of them starts with a dash and argparse reads it as a flag. Rewrite the
+    separated form into the attached form it does accept.
+    """
+    out, i = [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("-p", "--project") and i + 1 < len(argv):
+            out.append(f"--project={argv[i + 1]}")
+            i += 2
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+
+EXAMPLES = """
+examples:
+  cctl list                          this project's sessions, newest first
+  cctl list -n 5 --sort time         the five that burned the most time
+  cctl show                          where the latest session's time went
+  cctl show "query plan" -t 20       one session's twenty slowest steps
+  cctl show 0f80 -s --min 2          every step over two seconds, in order
+  cctl dump 0f80 --turn 3            replay turn 3 in full
+  cctl export "deck list" -o out.md  write the session out as Markdown
+  cctl projects                      every project with transcripts here
+  cctl resume "deck list"            reopen it in Claude Code
+  cctl del 0f80                      delete it (asks first)
+
+A SESSION is a full id, an unambiguous id prefix, or a substring of the session
+title. Omit it and the most recent session is used. Sessions are found by
+matching the current directory against the project slug, so run cctl from the
+tree you were working in, or pass -p (which takes a slug or a plain path).
+"""
+
+
+def cmd_help(args):
+    ap, parsers = build_parser()
+    if args.topic:
+        if args.topic not in parsers:
+            die(f"no such verb: {args.topic!r}\n"
+                f"       verbs: {', '.join(parsers)}")
+        parsers[args.topic].print_help()
+        return
+
+    ap.print_help()
+    print(EXAMPLES.rstrip())
+
+
+def build_parser():
+    """The parser, and its subparsers by name so `help` can print them all."""
+    ap = argparse.ArgumentParser(
+        prog="cctl", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="`cctl help <verb>` prints that verb's options.")
+    ap.add_argument("-p", "--project", metavar="SLUG|PATH",
+                    help="project slug or directory (default: current directory)")
+    sub = ap.add_subparsers(dest="verb", metavar="VERB")
+    parsers = {}
+
+    def verb(name, **kw):
+        parsers[name] = sub.add_parser(name, formatter_class=HelpFormat, **kw)
+        return parsers[name]
+
+    p = verb("list", help="sessions in this project, with timings")
+    p.add_argument("-a", "--all", action="store_true",
+                   help="every project's sessions, not just this one's;"
+                        " adds a project column and ignores -p")
+    p.add_argument("-n", "--limit", type=int, metavar="N",
+                   help="only the first N rows, after sorting")
+    p.add_argument("--sort", choices=("date", "time", "size"), default="date",
+                   help="order by session start, busy time, or transcript size")
+    p.add_argument("--refresh", action="store_true",
+                   help="re-read every transcript instead of trusting the cache")
+    p.add_argument("--json", action="store_true", help="emit raw records")
+    p.set_defaults(func=cmd_list)
+
+    p = verb("show", help="where one session's time went")
+    p.add_argument("session", nargs="?", help="id, id prefix, or title text")
+    p.add_argument("-s", "--steps", action="store_true",
+                   help="list every step in order, not just the summary")
+    p.add_argument("-t", "--top", type=int, metavar="N",
+                   help="list only the N slowest steps")
+    p.add_argument("--min", type=float, default=0.0, metavar="SEC",
+                   help="hide steps faster than this")
+    p.add_argument("--idle-threshold", type=float, default=IDLE_DEFAULT,
+                   metavar="SEC",
+                   help="model gaps longer than this count as idle, not compute")
+    p.add_argument("--json", action="store_true", help="emit raw steps")
+    p.set_defaults(func=cmd_show)
+
+    p = verb("dump", help="replay a whole session against a relative clock")
+    p.add_argument("session", nargs="?", help="id, id prefix, or title text")
+    p.add_argument("-l", "--lines", type=int, default=0, metavar="N",
+                   help="cap each block at N lines; 0 shows everything")
+    p.add_argument("--tools", nargs="?", choices=("none", "calls", "full"),
+                   const="full", default="calls", metavar="LEVEL",
+                   help="none: prose only; calls: the commands; full: their"
+                        " output too. Bare --tools means full")
+    p.add_argument("-f", "--follow", action="store_true",
+                   help="keep printing as the session grows, like tail -f")
+    p.add_argument("--interval", type=float, default=0.5, metavar="SEC",
+                   help="how often to check for new entries when following")
+    p.add_argument("--turn", type=int, metavar="N", help="replay only turn N")
+    p.add_argument("--no-thinking", action="store_true",
+                   help="omit reasoning blocks")
+    p.add_argument("--idle-threshold", type=float, default=IDLE_DEFAULT,
+                   metavar="SEC", help="what counts as a pause rather than work")
+    p.set_defaults(func=cmd_dump)
+
+    p = verb("export", help="write a session out as Markdown")
+    p.add_argument("session", nargs="?", help="id, id prefix, or title text")
+    p.add_argument("-o", "--output", metavar="FILE",
+                   help="write here instead of stdout")
+    p.add_argument("--tools", nargs="?", choices=("none", "calls", "full"),
+                   const="full", default="none", metavar="LEVEL",
+                   help="none: prose only; calls: the commands; full: their"
+                        " output too. Bare --tools means full")
+    p.add_argument("--collapse", action="store_true",
+                   help="fold tool output into <details> for web viewers;"
+                        " implies --tools full")
+    p.add_argument("--thinking", action="store_true",
+                   help="include reasoning blocks")
+    p.add_argument("--no-times", action="store_true",
+                   help="omit the relative-time annotations")
+    p.add_argument("--idle-threshold", type=float, default=IDLE_DEFAULT,
+                   metavar="SEC", help="what counts as a pause rather than work")
+    p.set_defaults(func=cmd_export)
+
+    p = verb("del", help="delete session transcripts")
+    p.add_argument("session", nargs="+", help="id, id prefix, or title text")
+    p.add_argument("-y", "--yes", action="store_true",
+                   help="skip the confirmation prompt")
+    p.add_argument("--match-many", action="store_true",
+                   help="let one pattern delete several sessions at once")
+    p.set_defaults(func=cmd_del)
+
+    p = verb("projects", help="every project with transcripts on this machine")
+    p.add_argument("--json", action="store_true", help="emit raw records")
+    p.set_defaults(func=cmd_projects)
+
+    p = verb("resume", help="hand off to `claude --resume`")
+    p.add_argument("session", nargs="?",
+                   help="id, id prefix, or title text; omit for the picker")
+    p.set_defaults(func=cmd_resume)
+
+    p = verb("help", help="this overview, or one verb's options")
+    p.add_argument("topic", nargs="?", metavar="VERB",
+                   help="show this verb's options instead of the overview")
+    p.set_defaults(func=cmd_help)
+
+    return ap, parsers
+
+
+def main():
+    ap, _ = build_parser()
+    args = ap.parse_args(fixup(sys.argv[1:]))
+    if not getattr(args, "func", None):
+        # Bare `cctl` is a request to be told what this does, not an error.
+        args.topic = None
+        cmd_help(args)
+        return
+    args.func(args)
+
+
+if __name__ == "__main__":
+    # Die quietly when piped into head/less, the way a normal Unix tool does.
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)
