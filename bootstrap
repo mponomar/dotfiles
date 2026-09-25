@@ -69,3 +69,11 @@ sudo apt install -y build-essential cmake bison flex libprotobuf-c-dev libreadli
 ssh-keygen  -N '' -f ~/.ssh/id_rsa
 sudo apt autoremove -y
 sudo apt-file update
+
+mkdir -p ~/.claude && cat > ~/.claude/keybindings.json <<'EOF'
+{
+  "$schema": "https://www.schemastore.org/claude-code-keybindings.json",
+  "$docs": "https://code.claude.com/docs/en/keybindings",
+  "bindings": [ { "context": "Chat", "bindings": { "escape": null } } ]
+}
+EOF
